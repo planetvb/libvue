@@ -42,32 +42,20 @@
 
 
 /*****************************************************************************
- *                                  Macros                                   *
- *****************************************************************************/
-
-/* Sign-extend a value that is some number of bits in size */
-#define vueSignExtend(x, bits) (x & 1 << bits - 1 ? x | -1 << bits : x)
-
-
-
-/*****************************************************************************
- *                           Sub-Library Includes                            *
+ *                             Non-API Functions                             *
  *****************************************************************************/
 
 /* Forward references */
 static int cpuRead (VUE_CONTEXT *, VUE_ACCESS *);
 static int cpuWrite(VUE_CONTEXT *, VUE_ACCESS *);
 
-#include "bus.c"
-#include "instructions.c"
-#include "instructiondefs.c"
-#include "cpu.c"
-
-
-
-/*****************************************************************************
- *                             Non-API Functions                             *
- *****************************************************************************/
+/* Sign-extend a value that is some number of bits in size */
+/* Originally a macro, but gcc -Wshift-count-overflow was being raised on it */
+static int32_t vueSignExtend(int32_t x, int32_t bits) {
+    if (x & (x << (bits - 1)))
+        x |= (uint32_t) 0xFFFFFFFF << bits;
+    return x;
+}
 
 /* Verify whether an access format is valid */
 static int vueValidateFormat(uint8_t format) {
@@ -79,6 +67,18 @@ static int vueValidateFormat(uint8_t format) {
         format == VUE_32
     ) ? 1 : 0;
 }
+
+
+
+/*****************************************************************************
+ *                           Sub-Library Includes                            *
+ *****************************************************************************/
+
+
+#include "bus.c"
+#include "instructions.c"
+#include "instructiondefs.c"
+#include "cpu.c"
 
 
 
@@ -98,7 +98,7 @@ int vueCheckCondition(VUE_CONTEXT *vb, int id) {
         case VUE_N:  return vb->cpu.psw.s;
         case VUE_T:  return 1;
         case VUE_LT: return vb->cpu.psw.s ^ vb->cpu.psw.ov;
-        case VUE_LE: return vb->cpu.psw.s ^ vb->cpu.psw.ov | vb->cpu.psw.z;
+        case VUE_LE: return (vb->cpu.psw.s ^ vb->cpu.psw.ov) | vb->cpu.psw.z;
         case VUE_NV: return vb->cpu.psw.ov ^ 1;
         case VUE_NC: return vb->cpu.psw.cy ^ 1;
         case VUE_NZ: return vb->cpu.psw.z ^ 1;
@@ -106,7 +106,7 @@ int vueCheckCondition(VUE_CONTEXT *vb, int id) {
         case VUE_P:  return vb->cpu.psw.s ^ 1;
         case VUE_F:  return 0;
         case VUE_GE: return vb->cpu.psw.s ^ vb->cpu.psw.ov ^ 1;
-        case VUE_GT: return (vb->cpu.psw.s ^ vb->cpu.psw.ov | vb->cpu.psw.z)^1;
+        case VUE_GT: return ((vb->cpu.psw.s^vb->cpu.psw.ov) | vb->cpu.psw.z)^1;
         default:;
     }
 
@@ -117,8 +117,7 @@ int vueCheckCondition(VUE_CONTEXT *vb, int id) {
 /* Perform all emulation tasks for some number of CPU cycles    */
 /* Returns the application-supplied break code, or zero if none */
 int vueEmulate(VUE_CONTEXT *vb, int32_t *cycles) {
-    int     break_code;  /* Application-supplied emulation break code */
-    int32_t cycles_this; /* CPU cycles taken by current iteration     */
+    int break_code; /* Application-supplied emulation break code */
 
     /* Keep processing until all cycles have been processed */
     for (; *cycles > 0; *cycles = *cycles - vb->cpu.cycles) {
@@ -197,21 +196,21 @@ uint32_t vueGetSystemRegister(VUE_CONTEXT *vb, int id) {
         case VUE_SR31:  return vb->cpu.sr31;
         case VUE_PSW:
             return
-                (uint32_t) vb->cpu.psw.z      <<  0 |
-                (uint32_t) vb->cpu.psw.s      <<  1 |
-                (uint32_t) vb->cpu.psw.ov     <<  2 |
-                (uint32_t) vb->cpu.psw.cy     <<  3 |
-                (uint32_t) vb->cpu.psw.fpr    <<  4 |
-                (uint32_t) vb->cpu.psw.fud    <<  5 |
-                (uint32_t) vb->cpu.psw.fov    <<  6 |
-                (uint32_t) vb->cpu.psw.fzd    <<  7 |
-                (uint32_t) vb->cpu.psw.fiv    <<  8 |
-                (uint32_t) vb->cpu.psw.fro    <<  9 |
-                (uint32_t) vb->cpu.psw.id     << 12 |
-                (uint32_t) vb->cpu.psw.ae     << 13 |
-                (uint32_t) vb->cpu.psw.ep     << 14 |
-                (uint32_t) vb->cpu.psw.np     << 15 |
-                (uint32_t) vb->cpu.psw.i & 15 << 16
+                (uint32_t) (vb->cpu.psw.z       <<  0) |
+                (uint32_t) (vb->cpu.psw.s       <<  1) |
+                (uint32_t) (vb->cpu.psw.ov      <<  2) |
+                (uint32_t) (vb->cpu.psw.cy      <<  3) |
+                (uint32_t) (vb->cpu.psw.fpr     <<  4) |
+                (uint32_t) (vb->cpu.psw.fud     <<  5) |
+                (uint32_t) (vb->cpu.psw.fov     <<  6) |
+                (uint32_t) (vb->cpu.psw.fzd     <<  7) |
+                (uint32_t) (vb->cpu.psw.fiv     <<  8) |
+                (uint32_t) (vb->cpu.psw.fro     <<  9) |
+                (uint32_t) (vb->cpu.psw.id      << 12) |
+                (uint32_t) (vb->cpu.psw.ae      << 13) |
+                (uint32_t) (vb->cpu.psw.ep      << 14) |
+                (uint32_t) (vb->cpu.psw.np      << 15) |
+                (uint32_t) (vb->cpu.psw.i & (15 << 16))
             ;
         default:;
     }

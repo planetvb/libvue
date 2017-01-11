@@ -31,6 +31,10 @@
 
 /* Handler for illegal opcodes */
 static void cpfIllegal(VUE_INSTRUCTION *inst) {
+
+    /* Suppress unused parameter warning */
+    inst = inst;
+
     /* Take no action */
 }
 

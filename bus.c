@@ -54,7 +54,7 @@ static void busReadMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
     int      data_size; /* Size of accessed data unit */
 
     /* Resolve the actual buffer offset to access */
-    offset = access->address & size - 1;
+    offset = access->address & (size - 1);
 
     /* Parse the access format */
     data_size = access->format & 0x7F;
@@ -82,7 +82,7 @@ static void busReadMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
 
     /* Sign-extend if appropriate */
     if (access->format & 0x80)
-        vueSignExtend(access->value, data_size);
+        access->value = vueSignExtend(access->value, data_size);
 }
 
 /* Read a value from cartridge RAM */
@@ -115,6 +115,9 @@ static int32_t busReadCartROM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 /* RESEARCH: How many cycles does this take? */
 static int32_t busReadNull(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
+    /* Suppress unused parameter warning */
+    vb = vb;
+
     /* Load a zero for unmapped addresses */
     access->value = 0;
 
@@ -145,7 +148,7 @@ static void busWriteMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
     int      data_size;  /* Size of accessed data unit */
 
     /* Resolve the actual buffer offset to access */
-    offset = access->address & size - 1;
+    offset = access->address & (size - 1);
 
     /* Parse the access format */
     data_size = access->format & 0x7F;
@@ -195,6 +198,10 @@ static int32_t busWriteCartROM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 /* Unconfigured write handler for any data format */
 /* RESEARCH: How many cycles does this take? */
 static int32_t busWriteNull(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
+    /* Suppress unused parameter warnings */
+    vb     = vb;
+    access = access;
 
     /* Take no action */
 
