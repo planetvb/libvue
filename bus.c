@@ -25,12 +25,22 @@
 
 
 
+/* Aliases for future-implemented functions */
+#define vipRead  busReadNull
+#define vsuRead  busReadNull
+#define hwcRead  busReadNull
+#define vipWrite busWriteNull
+#define vsuWrite busWriteNull
+#define hwcWrite busWriteNull
+
+
+
 /*****************************************************************************
  *                                   Types                                   *
  *****************************************************************************/
 
 /* Function pointer for read and write handlers */
-typedef void (*ROUTE)(VUE_CONTEXT *, VUE_ACCESS *);
+typedef int32_t (*ROUTE)(VUE_CONTEXT *, VUE_ACCESS *);
 
 
 
@@ -40,16 +50,14 @@ typedef void (*ROUTE)(VUE_CONTEXT *, VUE_ACCESS *);
 
 /* Common memory-based read handler */
 static void busReadMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
-    uint32_t offset;      /* Buffer offset to access    */
-    int      data_size;   /* Size of accessed data unit */
-    int      sign_extend; /* Sign extension is required */
+    uint32_t offset;    /* Buffer offset to access    */
+    int      data_size; /* Size of accessed data unit */
 
     /* Resolve the actual buffer offset to access */
     offset = access->address & size - 1;
 
     /* Parse the access format */
-    data_size   = access->format & 0x7F;
-    sign_extend = access->format >> 7 & 1;
+    data_size = access->format & 0x7F;
 
     /* Read data according to data size */
     switch (data_size) {
@@ -73,36 +81,56 @@ static void busReadMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
     }
 
     /* Sign-extend if appropriate */
-    if (sign_extend)
-        access->value |= (int32_t) -1 << data_size;
+    if (access->format & 0x80)
+        vueSignExtend(access->value, data_size);
 }
 
 /* Read a value from cartridge RAM */
-static void busReadCartRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
-
-    /* No cartridge RAM is present */
-    if (vb->cart_ram.size == 0) {
-        access->value = 0;
-        return;
-    }
+/* RESEARCH: How many cycles does this take? */
+static int32_t busReadCartRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
     /* Use the common memory read routine */
-    busReadMemory(access, vb->cart_ram.data, vb->cart_ram.size);
+    if (vb->cart.ram_size != 0)
+        busReadMemory(access, vb->cart.ram, vb->cart.ram_size);
+
+    /* No cartridge RAM is present */
+    else access->value = 0;
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 /* Read a value from cartridge ROM */
-static void busReadCartROM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
-    busReadMemory(access, vb->cart_rom.data, vb->cart_rom.size);
+/* RESEARCH: How many cycles does this take? */
+static int32_t busReadCartROM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
+    /* Use the common memory read routine */
+    busReadMemory(access, vb->cart.rom, vb->cart.rom_size);
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 /* Unconfigured read handler for any data format */
-static void busReadNull(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+/* RESEARCH: How many cycles does this take? */
+static int32_t busReadNull(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
+    /* Load a zero for unmapped addresses */
     access->value = 0;
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 /* Read a value from WRAM */
-static void busReadWRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+/* RESEARCH: How many cycles does this take? */
+static int32_t busReadWRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
+    /* Use the common memory read routine */
     busReadMemory(access, vb->wram, 0x10000);
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 
@@ -122,45 +150,67 @@ static void busWriteMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
     /* Parse the access format */
     data_size = access->format & 0x7F;
 
-    /* Common data for all data sizes */
-    data[offset] = access->value & 0xFF;
-
-    /* Data absent from 8-bit writes */
-    if (data_size != 8) {
-        data[offset + 1] = access->value >> 8 & 0xFF;
-
-        /* Data only for 32-bit writes */
-        if (data_size == 32) {
+    /* Write data according to data size */
+    switch (data_size) {
+        case 8:
+            data[offset] = access->value & 0xFF;
+            break;
+        case 16:
+            data[offset + 0] = access->value >> 0 & 0xFF;
+            data[offset + 1] = access->value >> 8 & 0xFF;
+            break;
+        case 32:
+            data[offset + 0] = access->value >>  0 & 0xFF;
+            data[offset + 1] = access->value >>  8 & 0xFF;
             data[offset + 2] = access->value >> 16 & 0xFF;
             data[offset + 3] = access->value >> 24 & 0xFF;
-        }
+            break;
+        default:;
     }
 }
 
 /* Write a value to cartridge RAM */
-static void busWriteCartRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
-
-    /* No cartridge RAM is present */
-    if (vb->cart_ram.size == 0)
-        return;
+/* RESEARCH: How many cycles does this take? */
+static int32_t busWriteCartRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
     /* Use the common memory write routine */
-    busWriteMemory(access, vb->cart_ram.data, vb->cart_ram.size);
+    if (vb->cart.ram_size != 0)
+        busWriteMemory(access, vb->cart.ram, vb->cart.ram_size);
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 /* Write a value to cartridge ROM */
-static void busWriteCartROM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
-    busWriteMemory(access, vb->cart_rom.data, vb->cart_rom.size);
+/* RESEARCH: How many cycles does this take? */
+static int32_t busWriteCartROM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
+    /* Use the common memory write routine */
+    busWriteMemory(access, vb->cart.rom, vb->cart.rom_size);
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 /* Unconfigured write handler for any data format */
-static void busWriteNull(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+/* RESEARCH: How many cycles does this take? */
+static int32_t busWriteNull(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
     /* Take no action */
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 /* Write a value to WRAM */
-static void busWriteWRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+/* RESEARCH: How many cycles does this take? */
+static int32_t busWriteWRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+
+    /* Use the common memory write routine */
     busWriteMemory(access, vb->wram, 0x10000);
+
+    /* Return the number of cycles taken */
+    return 0;
 }
 
 
@@ -171,36 +221,30 @@ static void busWriteWRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
 /* Read a value from the CPU bus */
 /* The access's format and address must be valid */
-static void busRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+static int32_t busRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
     /* Address routing table */
     static const ROUTE ROUTES[] = {
-        &busReadNull, &busReadNull, &busReadNull,    &busReadNull,
+        &vipRead,     &vsuRead,     &hwcRead,        &busReadNull,
         &busReadNull, &busReadWRAM, &busReadCartRAM, &busReadCartROM
     };
 
-    /* Initialize the cycle counter */
-    access->cycles = 0;
-
     /* Route the access to the appropriate module */
-    ROUTES[access->address >> 24 & 7](vb, access);
+    return ROUTES[access->address >> 24 & 7](vb, access);
 }
 
 /* Write a value to the CPU bus */
 /* The access's format and address must be valid */
-static void busWrite(VUE_CONTEXT *vb, VUE_ACCESS *access) {
+static int32_t busWrite(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
     /* Address routing table */
     static const ROUTE ROUTES[] = {
-        &busWriteNull, &busWriteNull, &busWriteNull,    &busWriteNull, 
+        &vipWrite,     &vsuWrite,     &hwcWrite,        &busWriteNull,
         &busWriteNull, &busWriteWRAM, &busWriteCartRAM, &busWriteCartROM
     };
 
-    /* Initialize the cycle counter */
-    access->cycles = 0;
-
     /* Route the access to the appropriate module */
-    ROUTES[access->address >> 24 & 7](vb, access);
+    return ROUTES[access->address >> 24 & 7](vb, access);
 }
 
 
