@@ -48,6 +48,10 @@ extern "C" {
 #define VUE_U16 0x10
 #define VUE_32  0x20
 
+/* Access modes */
+#define VUE_DEBUG    0
+#define VUE_INTERNAL 1
+
 /* Condition IDs */
 #define VUE_C   1
 #define VUE_E   2
@@ -291,9 +295,9 @@ struct VUE_CONTEXT {
 VUEAPI int      vueCheckCondition   (VUE_CONTEXT *vb, int id);
 VUEAPI int      vueEmulate          (VUE_CONTEXT *vb, int32_t *cycles);
 VUEAPI uint32_t vueGetSystemRegister(VUE_CONTEXT *vb, int id);
-VUEAPI void     vueRead             (VUE_CONTEXT *vb, VUE_ACCESS *access, int internal);
+VUEAPI void     vueRead             (VUE_CONTEXT *vb, VUE_ACCESS *access, int mode);
 VUEAPI uint32_t vueSetSystemRegister(VUE_CONTEXT *vb, int id, uint32_t value);
-VUEAPI void     vueWrite            (VUE_CONTEXT *vb, VUE_ACCESS *access, int internal);
+VUEAPI void     vueWrite            (VUE_CONTEXT *vb, VUE_ACCESS *access, int mode);
 
 
 

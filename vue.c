@@ -220,7 +220,7 @@ uint32_t vueGetSystemRegister(VUE_CONTEXT *vb, int id) {
 }
 
 /* Performs a read access on the CPU bus */
-void vueRead(VUE_CONTEXT *vb, VUE_ACCESS *access, int internal) {
+void vueRead(VUE_CONTEXT *vb, VUE_ACCESS *access, int mode) {
     int32_t cycles; /* CPU cycles taken by bus access */
 
     /* Error checking */
@@ -234,7 +234,7 @@ void vueRead(VUE_CONTEXT *vb, VUE_ACCESS *access, int internal) {
     cycles = busRead(vb, access);
 
     /* Update CPU cycle counter for internal accesses */
-    if (internal)
+    if (mode == VUE_INTERNAL)
         vb->cpu.cycles += cycles;
 }
 
@@ -282,7 +282,7 @@ uint32_t vueSetSystemRegister(VUE_CONTEXT *vb, int id, uint32_t value) {
 }
 
 /* Performs a write access on the CPU bus */
-void vueWrite(VUE_CONTEXT *vb, VUE_ACCESS *access, int internal) {
+void vueWrite(VUE_CONTEXT *vb, VUE_ACCESS *access, int mode) {
     int32_t cycles; /* CPU cycles taken by bus access */
 
     /* Error checking */
@@ -296,6 +296,6 @@ void vueWrite(VUE_CONTEXT *vb, VUE_ACCESS *access, int internal) {
     cycles = busWrite(vb, access);
 
     /* Update CPU cycle counter for internal accesses */
-    if (internal)
+    if (mode == VUE_INTERNAL)
         vb->cpu.cycles += cycles;
 }
