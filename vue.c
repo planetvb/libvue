@@ -114,7 +114,7 @@ int vueCheckCondition(VUE_CONTEXT *vb, int id) {
     return 0;
 }
 
-/* Perform all emulation tasks for some number of CPU cycles    */
+/* Perform all emulation tasks for some number of CPU cycles */
 /* Returns the application-supplied break code, or zero if none */
 int vueEmulate(VUE_CONTEXT *vb, int32_t *cycles) {
     int break_code; /* Application-supplied emulation break code */
@@ -156,8 +156,8 @@ int vueEmulate(VUE_CONTEXT *vb, int32_t *cycles) {
 
 /* Fetch and decode an instruction from the CPU bus */
 void vueFetch(VUE_CONTEXT *vb, uint32_t address, VUE_INSTRUCTION *inst) {
-    int32_t        cycles;  /* Initial CPU cycle count      */
-    VUE_ACCESSPROC onread;  /* Initial read access handler  */
+    int32_t        cycles;  /* Initial CPU cycle count */
+    VUE_ACCESSPROC onread;  /* Initial read access handler */
     VUE_ACCESSPROC onwrite; /* Initial write access handler */
 
     /* Temporarily disable access handlers and cycle counter */
@@ -239,8 +239,8 @@ void vueRead(VUE_CONTEXT *vb, VUE_ACCESS *access, int mode) {
 }
 
 /* Specify a new value for a CPU system register given its numeric ID */
-/* Returns the actual value written to the system register            */
-/* This function is allowed to write to ECR                           */
+/* Returns the actual value written to the system register */
+/* This function is allowed to write to ECR */
 uint32_t vueSetSystemRegister(VUE_CONTEXT *vb, int id, uint32_t value) {
 
     /* Select the system register by its ID */

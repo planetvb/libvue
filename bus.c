@@ -50,7 +50,7 @@ typedef int32_t (*ROUTE)(VUE_CONTEXT *, VUE_ACCESS *);
 
 /* Common memory-based read handler */
 static void busReadMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
-    uint32_t offset;    /* Buffer offset to access    */
+    uint32_t offset;    /* Buffer offset to access */
     int      data_size; /* Size of accessed data unit */
 
     /* Resolve the actual buffer offset to access */
@@ -144,8 +144,8 @@ static int32_t busReadWRAM(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
 /* Common memory-based write handler */
 static void busWriteMemory(VUE_ACCESS *access, uint8_t *data, uint32_t size) {
-    uint32_t offset;     /* Buffer offset to access    */
-    int      data_size;  /* Size of accessed data unit */
+    uint32_t offset;    /* Buffer offset to access */
+    int      data_size; /* Size of accessed data unit */
 
     /* Resolve the actual buffer offset to access */
     offset = access->address & (size - 1);

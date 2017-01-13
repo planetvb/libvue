@@ -193,26 +193,27 @@ typedef int (*VUE_EXECUTEPROC  )(VUE_CONTEXT *, VUE_INSTRUCTION *);
 
 /* Descriptor for bus accesses */
 struct VUE_ACCESS {
-    uint32_t address; /* Bus address to access                  */
+    uint32_t address; /* Bus address to access */
     int32_t  value;   /* Value to write, or receives value read */
-    int8_t   format;  /* Data size/format                       */
+    int8_t   format;  /* Data size/format */
 };
 
 /* Descriptor for CPU instructions */
 struct VUE_INSTRUCTION {
-    uint32_t address;      /* Effective address              */
-    uint32_t bits;         /* Instruction binary data        */
-    int32_t  displacement; /* Displacement distance          */
-    int32_t  immediate;    /* Immediate data                 */
-    uint8_t  condition;    /* Condition ID                   */
-    uint8_t  format;       /* Binary format                  */
-    uint8_t  instruction;  /* libvue instruction ID          */
-    uint8_t  opcode;       /* Instruction ID                 */
-    uint8_t  register1;    /* Right-hand operand             */
+    uint32_t address;      /* Effective address */
+    uint32_t bits;         /* Instruction binary data */
+    int32_t  displacement; /* Displacement distance */
+    int32_t  immediate;    /* Immediate data */
+    uint8_t  condition;    /* Condition ID */
+    uint8_t  format;       /* Binary format */
+    uint8_t  instruction;  /* libvue instruction ID */
+    uint8_t  opcode;       /* Instruction ID */
+    uint8_t  register1;    /* Right-hand operand */
     uint8_t  register2;    /* Left-hand operand, destination */
-    uint8_t  size;         /* Binary size, in bytes          */
-    uint8_t  subopcode;    /* Extended instruction ID        */
-    uint8_t  true;         /* Condition status               */
+    uint8_t  sign_extend;  /* Immediate data is sign-extended */
+    uint8_t  size;         /* Binary size, in bytes */
+    uint8_t  subopcode;    /* Extended instruction ID */
+    uint8_t  true;         /* Condition status */
 };
 
 /* Top-level emulation state context */
@@ -220,17 +221,17 @@ struct VUE_CONTEXT {
 
     /* Debug settings */
     struct {
-        VUE_EXCEPTIONPROC onexception; /* Exception    */
-        VUE_EXECUTEPROC   onexecute;   /* Execute      */
-        VUE_ACCESSPROC    onread;      /* Read access  */
+        VUE_EXCEPTIONPROC onexception; /* Exception */
+        VUE_EXECUTEPROC   onexecute;   /* Execute */
+        VUE_ACCESSPROC    onread;      /* Read access */
         VUE_ACCESSPROC    onwrite;     /* Write access */
     } debug;
 
     /* Cartridge RAM state information */
     struct {
-        uint8_t  *ram;      /* Cartridge RAM data          */
+        uint8_t  *ram;      /* Cartridge RAM data */
         uint32_t  ram_size; /* Size, in bytes, of RAM data */
-        uint8_t  *rom;      /* Cartridge ROM data          */
+        uint8_t  *rom;      /* Cartridge ROM data */
         uint32_t  rom_size; /* Size, in bytes, of ROM data */
     } cart;
 
@@ -239,42 +240,42 @@ struct VUE_CONTEXT {
 
         /* System registers */
         uint32_t adtre; /* Address Trap Register for Execution */
-        uint32_t chcw;  /* Cache Control Word                  */
-        uint32_t ecr;   /* Exception Cause Register            */
-        uint32_t eipc;  /* Exception/Interrupt restore PC      */
-        uint32_t eipsw; /* Exception/Interrupt restore PSW     */
-        uint32_t fepc;  /* Duplexed Exception restore PC       */
-        uint32_t fepsw; /* Duplexed Exception restore PSW      */
-        uint32_t sr29;  /* "System Register 29"                */
-        uint32_t sr31;  /* "System Register 31"                */
+        uint32_t chcw;  /* Cache Control Word */
+        uint32_t ecr;   /* Exception Cause Register */
+        uint32_t eipc;  /* Exception/Interrupt restore PC */
+        uint32_t eipsw; /* Exception/Interrupt restore PSW */
+        uint32_t fepc;  /* Duplexed Exception restore PC */
+        uint32_t fepsw; /* Duplexed Exception restore PSW */
+        uint32_t sr29;  /* "System Register 29" */
+        uint32_t sr31;  /* "System Register 31" */
 
         /* Program Status Word */
         struct {
-            uint8_t ae;  /* Address trap enable                  */
-            uint8_t cy;  /* Carry                                */
-            uint8_t ep;  /* Exception pending                    */
-            uint8_t fiv; /* Floating-point invalid operation     */
-            uint8_t fov; /* Floating-point overflow              */
+            uint8_t ae;  /* Address trap enable */
+            uint8_t cy;  /* Carry */
+            uint8_t ep;  /* Exception pending */
+            uint8_t fiv; /* Floating-point invalid operation */
+            uint8_t fov; /* Floating-point overflow */
             uint8_t fpr; /* Floating-point precision degradation */
-            uint8_t fro; /* Floating-point reserved operand      */
-            uint8_t fud; /* Floating-point underflow             */
-            uint8_t fzd; /* Floating-point zero division         */
-            uint8_t i;   /* Interrupt masking level              */
-            uint8_t id;  /* Interrupt disable                    */
-            uint8_t np;  /* Duplexed exception ("NMI") pending   */
-            uint8_t ov;  /* Overflow                             */
-            uint8_t s;   /* Sign                                 */
-            uint8_t z;   /* Zero                                 */
+            uint8_t fro; /* Floating-point reserved operand */
+            uint8_t fud; /* Floating-point underflow */
+            uint8_t fzd; /* Floating-point zero division */
+            uint8_t i;   /* Interrupt masking level */
+            uint8_t id;  /* Interrupt disable */
+            uint8_t np;  /* Duplexed exception ("NMI") pending */
+            uint8_t ov;  /* Overflow */
+            uint8_t s;   /* Sign */
+            uint8_t z;   /* Zero */
         } psw;
 
         /* Program registers */
-        uint32_t pc;            /* Program counter   */
+        uint32_t pc;            /* Program counter */
         int32_t  registers[32]; /* Program registers */
 
         /* CPU control */
         int32_t cycles; /* Cycles for current emulation step */
-        uint8_t halt;   /* Halting status                    */
-        uint8_t stage;  /* Current pipeline stage            */
+        uint8_t halt;   /* Halting status */
+        uint8_t stage;  /* Current pipeline stage */
 
     } cpu;
 

@@ -48,6 +48,8 @@ static void cpfFormatI(VUE_INSTRUCTION *inst) {
 static void cpfFormatII(VUE_INSTRUCTION *inst) {
     inst->immediate = inst->bits >> 0 & 31;
     inst->register2 = inst->bits >> 5 & 31;
+    if (inst->sign_extend)
+        inst->immediate = vueSignExtend(inst->immediate, 5);
 }
 
 /* Decoder for Format III */
@@ -69,6 +71,8 @@ static void cpfFormatV(VUE_INSTRUCTION *inst) {
     inst->immediate = inst->bits >>  0 & 0xFFFF;
     inst->register1 = inst->bits >> 16 & 31;
     inst->register2 = inst->bits >> 21 & 31;
+    if (inst->sign_extend)
+        inst->immediate = vueSignExtend(inst->immediate, 16);
 }
 
 /* Decoder for Format VI */
@@ -93,53 +97,50 @@ static void cpfFormatVII(VUE_INSTRUCTION *inst) {
  *****************************************************************************/
 
 /* Addition processing */
-static void cpiAdd(VUE_CONTEXT *vb, int reg, int32_t right) {
-    int32_t left;   /* Left-hand operand */
+static int32_t cpiAdd(VUE_CONTEXT *vb, int32_t left, int32_t right) {
     int32_t result; /* Operation output  */
 
-    /* Determine the result of the operation */
-    left   = vb->cpu.registers[reg];
+    /* Perform the operation */
     result = left + right;
 
     /* Update CPU state */
-    vb->cpu.registers[reg] = result;
     vb->cpu.psw.cy = (uint32_t) result < (uint32_t) left ? 1 : 0;
     vb->cpu.psw.ov = (~left ^ right & left ^ result) >> 31 & 1;
     vb->cpu.psw.s  = result >> 31 & 1;
     vb->cpu.psw.z  = result ? 0 : 1;
+
+    return result;
 }
 
 /* Bitwise AND processing */
-static void cpiAnd(VUE_CONTEXT *vb, int reg, int32_t right) {
-    int32_t left;   /* Left-hand operand */
+static int32_t cpiAnd(VUE_CONTEXT *vb, int32_t left, int32_t right) {
     int32_t result; /* Operation output  */
 
-    /* Determine the result of the operation */
-    left   = vb->cpu.registers[reg];
+    /* Perform the operation */
     result = left & right;
 
     /* Update CPU state */
-    vb->cpu.registers[reg] = result;
     vb->cpu.psw.ov = 0;
     vb->cpu.psw.s  = result >> 31 & 1;
     vb->cpu.psw.z  = result ? 0 : 1;
+
+    return result;
 }
 
 /* Subtraction processing */
-static void cpiSubtract(VUE_CONTEXT *vb, int reg, int32_t right) {
-    int32_t left;   /* Left-hand operand */
+static int32_t cpiSubtract(VUE_CONTEXT *vb, int32_t left, int32_t right) {
     int32_t result; /* Operation output  */
 
-    /* Determine the result of the operation */
-    left   = vb->cpu.registers[reg];
+    /* Perform the operation */
     result = left - right;
 
     /* Update CPU state */
-    vb->cpu.registers[reg] = result;
     vb->cpu.psw.cy = (uint32_t) left < (uint32_t) right ? 1 : 0;
     vb->cpu.psw.ov = (left ^ right & left ^ result) >> 31 & 1;
     vb->cpu.psw.s  = result >> 31 & 1;
     vb->cpu.psw.z  = result ? 0 : 1;
+
+    return result;
 }
 
 
@@ -158,63 +159,68 @@ static int cpiIllegal(VUE_CONTEXT *vb){
     return cpuRaiseException(vb, 0xFF90, &vb->instruction);
 }
 
-/* ADD - Add (immediate) */
+/* ADD - Add Immediate */
 static int cpiADD_IMM(VUE_CONTEXT *vb) {
 
-    cpiAdd(
-        vb->instruction.register2,
-        vueSignExtend(vb->instruction.immediate, 5)
+    /* Call the common addition processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiAdd(vb,
+        vb->cpu.registers[vb->instruction.register2],
+        vb->instruction.immediate
     );
 
-    vb->cpu.cycles += 1; /* Update emulation state           */
+    vb->cpu.cycles += 1; /* Update emulation state */
     return 0;            /* No emulation break was requested */
 }
 
-/* ADD - Add (register) */
+/* ADD - Add Register */
 static int cpiADD_REG(VUE_CONTEXT *vb) {
 
-    cpiAdd(
-        vb->instruction.register2,
+    /* Call the common addition processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiAdd(vb,
+        vb->cpu.registers[vb->instruction.register2],
         vb->cpu.registers[vb->instruction.register1]
     );
 
-    vb->cpu.cycles += 1; /* Update emulation state           */
+    vb->cpu.cycles += 1; /* Update emulation state */
     return 0;            /* No emulation break was requested */
 }
 
 /* ADDI - Add Immediate */
 static int cpiADDI(VUE_CONTEXT *vb) {
 
-    cpiAdd(
-        vb->instruction.register2,
-        vueSignExtend(vb->instruction.immediate, 16)
+    /* Call the common addition processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiAdd(vb,
+        vb->cpu.registers[vb->instruction.register2],
+        vb->instruction.immediate
     );
 
-    vb->cpu.cycles += 1; /* Update emulation state           */
+    vb->cpu.cycles += 1; /* Update emulation state */
     return 0;            /* No emulation break was requested */
 }
 
 /* AND - And */
-static int cpiAND_REG(VUE_CONTEXT *vb) {
+static int cpiAND(VUE_CONTEXT *vb) {
 
-    cpiAdd(
-        vb->instruction.register2,
+    /* Call the common AND processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiAnd(vb,
+        vb->cpu.registers[vb->instruction.register2],
         vb->cpu.registers[vb->instruction.register1]
     );
 
-    vb->cpu.cycles += 1; /* Update emulation state           */
+    vb->cpu.cycles += 1; /* Update emulation state */
     return 0;            /* No emulation break was requested */
 }
 
 /* ANDI - And Immediate */
-static int cpiAND_IMM(VUE_CONTEXT *vb) {
+static int cpiANDI(VUE_CONTEXT *vb) {
 
-    cpiAdd(
-        vb->instruction.register2,
+    /* Call the common AND processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiAnd(vb,
+        vb->cpu.registers[vb->instruction.register2],
         vb->instruction.immediate
     );
 
-    vb->cpu.cycles += 1; /* Update emulation state           */
+    vb->cpu.cycles += 1; /* Update emulation state */
     return 0;            /* No emulation break was requested */
 }
 
@@ -236,7 +242,7 @@ static int cpiBCOND(VUE_CONTEXT *vb) {
 
 /* CAXI - Compare and Exchange Interlocked */
 static int cpiCAXI(VUE_CONTEXT *vb) {
-    VUE_ACCESS access;     /* Bus access descriptor                     */
+    VUE_ACCESS access;     /* Bus access descriptor */
     int        break_code; /* Application-supplied emulation break code */
 
     /* Read the lock value from memory */
@@ -249,7 +255,10 @@ static int cpiCAXI(VUE_CONTEXT *vb) {
         return break_code;
 
     /* Perform a comparison */
-    cpiSubtract(vb, vb->instruction.register2, access.value);
+    cpiSubtract(vb,
+        vb->cpu.registers[vb->instruction.register2],
+        access.value
+    );
 
     /* Exchange lock values */
     if (vb->cpu.psw.z) {
@@ -263,8 +272,80 @@ static int cpiCAXI(VUE_CONTEXT *vb) {
              return break_code;
     }
 
-    vb->cpu.cycles += 26; /* Update emulation state           */
+    vb->cpu.cycles += 26; /* Update emulation state */
     return 0;             /* No emulation break was requested */
+}
+
+/* CLI - Clear Interrupt Disable Flag */
+static int cpiCLI(VUE_CONTEXT *vb) {
+    vb->cpu.psw.id   = 0; /* Enable interrupts */
+    vb->cpu.cycles += 12; /* Update emulation state */
+    return 0;             /* No emulation break was requested */
+}
+
+/* CMP - Compare Immediate */
+static int cpiCMP_IMM(VUE_CONTEXT *vb) {
+
+    /* Call the common subtraction processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiSubtract(vb,
+        vb->cpu.registers[vb->instruction.register2],
+        vb->instruction.immediate
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state */
+    return 0;            /* No emulation break was requested */
+}
+
+/* CMP - Compare Register */
+static int cpiCMP_REG(VUE_CONTEXT *vb) {
+
+    /* Call the common subtraction processor */
+    vb->cpu.registers[vb->instruction.register2] = cpiSubtract(vb,
+        vb->cpu.registers[vb->instruction.register2],
+        vb->cpu.registers[vb->instruction.register1]
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state */
+    return 0;            /* No emulation break was requested */
+}
+
+/* DIV - Divide */
+static int cpiDIV(VUE_CONTEXT *vb) {
+    int     break_code; /* Application-supplied emulation break code */
+    int32_t left;       /* Left-hand operand */
+    int32_t result;     /* Operation output */
+    int32_t right;      /* Right-hand operand */
+
+    /* Resolve the operands */
+    left = vb->cpu.registers[vb->instruction.reg2];
+    right = vb->cpu.registers[vb->instruction.reg1];
+
+    /* Zero division occurred */
+    if (right == 0)
+        return cpuRaiseException(vb, 0xFF80, &vb->instruction);
+
+    /* Perform special-case division */
+    if (left == -0x800000000 && right == -1) {
+        result = left;
+        vb->cpu.ov = 1;
+        vb->cpu.registers[30] = 0;
+    }
+
+    /* Perform regular division */
+    else {
+        result = left / right;
+        vb->cpu.ov = 0;
+        vb->cpu.registers[30] = left % right;
+    }
+
+    /* Update emulation state */
+    vb->cpu.registers[vb->instruction.register2] = result;
+    vb->cpu.psw.s = result >> 31 & 1;
+    vb->cpu.psw.z = result ? 0 : 1;
+    vb->cpu.cycles += 38;
+
+    /* No emulation break was requested */
+    return 0;
 }
 
 

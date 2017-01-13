@@ -55,9 +55,9 @@ typedef int (*STAGEDEF)(VUE_CONTEXT *, VUE_INSTRUCTION *, uint32_t);
 /* RESEARCH: How many cycles does this take? */
 static int cpuRaiseException(VUE_CONTEXT *vb, uint16_t code,
     VUE_INSTRUCTION *inst) {
-    VUE_ACCESS access;     /* Write access descriptor                   */
+    VUE_ACCESS access;     /* Write access descriptor */
     int        break_code; /* Application-supplied emulation break code */
-    uint32_t   psw;        /* Current value in PSW                      */
+    uint32_t   psw;        /* Current value in PSW */
 
     /* Call the application-supplied exception handler if available */
     if (vb->debug.onexception) {
@@ -137,9 +137,9 @@ static int cpuRaiseException(VUE_CONTEXT *vb, uint16_t code,
 /* RESEARCH: Can ICC and ICD/ICR be performed simultaneously? */
 /* RESEARCH: How many cycles does this take? */
 static uint32_t cpuCacheControl(VUE_CONTEXT *vb, uint32_t value) {
-    int32_t cec; /* Cache Entry Count  */
+    int32_t cec; /* Cache Entry Count */
     int32_t cen; /* Cache Entry Number */
-    int      x;   /* Iterator           */
+    int     x;   /* Iterator */
 
     /* Clear instruction cache entries */
     if (value & ICC) {
@@ -191,7 +191,7 @@ static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
     /* Additional format processing */
     if (inst->format == 6)
         inst->address = vb->cpu.registers[inst->register1] +
-            inst->displacement;
+            inst->displacement;        
 
     /* Additional instruction ID processing */
     switch (inst->instruction) {
@@ -249,9 +249,9 @@ static int cpuExecute(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
 
 /* Fetch the first 16 bits of an instruction */
 static int cpuFetch16(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
-    VUE_ACCESS  access;     /* Read access descriptor                    */
+    VUE_ACCESS  access;     /* Read access descriptor */
     int         break_code; /* Application-supplied emulation break code */
-    OPDEF      *opdef;      /* Opcode translation descriptor             */
+    OPDEF      *opdef;      /* Opcode translation descriptor */
 
     /* Read the bits from the memory bus */
     access.address = pc;
@@ -268,6 +268,7 @@ static int cpuFetch16(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
     opdef             = (OPDEF *) &OPDEFS[inst->opcode];
     inst->format      = opdef->format;
     inst->instruction = opdef->instruction;
+    inst->sign_extend = opdef->sign_extend;
     inst->size        = (opdef->format < 4) ? 2 : 4;
 
     /* The fetch was requested externally */
@@ -283,7 +284,7 @@ static int cpuFetch16(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
 
 /* Fetch the second 16 bits of a 32-bit instruction */
 static int cpuFetch32(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
-    VUE_ACCESS access;     /* Read access descriptor                    */
+    VUE_ACCESS access;     /* Read access descriptor */
     int        break_code; /* Application-supplied emulation break code */
 
     /* Read the bits from the memory bus */
@@ -312,15 +313,15 @@ static int cpuFetch32(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
 /* Pipeline stage handler for interrupt checks */
 static int cpuInterrupt(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
     int break_code; /* Application-supplied emulation break code */
-    int level;      /* Interrupt level                           */
+    int level;      /* Interrupt level */
 
     /* Interrupt code lookup table */
     static const uint16_t CODES[] = {
-        0xFE00, /* Game pad  */
-        0xFE10, /* Timer     */
+        0xFE00, /* Game pad */
+        0xFE10, /* Timer */
         0xFE20, /* Cartridge */
-        0xFE30, /* Link      */
-        0xFE40  /* VIP       */
+        0xFE30, /* Link */
+        0xFE40  /* VIP */
     };
 
     /* Suppress unused parameter warnings */
@@ -389,7 +390,7 @@ static int cpuEmulate(VUE_CONTEXT *vb) {
     return 0;
 }
 
-/* Perform a read on the CPU bus                                   */
+/* Perform a read on the CPU bus */
 /* Returns non-zero if the application requests an emulation break */
 static int cpuRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
@@ -404,7 +405,7 @@ static int cpuRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
     return 0;
 }
 
-/* Perform a write on the CPU bus                                  */
+/* Perform a write on the CPU bus */
 /* Returns non-zero if the application requests an emulation break */
 static int cpuWrite(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
