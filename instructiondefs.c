@@ -169,16 +169,16 @@ static const uint8_t FLOATENDODEFS[] = {
 /* Instruction execute handler lookup table */
 static const INSTDEF INSTDEFS[] = {
     &cpiIllegal,
-    &cpiIllegal, /* &cpiADD_IMM, */
-    &cpiIllegal, /* &cpiADD_REG, */
+    &cpiADD_IMM,
+    &cpiADD_REG,
     &cpiIllegal, /* &cpiADDF_S,  */
-    &cpiIllegal, /* &cpiADDI,    */
-    &cpiIllegal, /* &cpiAND,     */
+    &cpiADDI,
+    &cpiAND,
     &cpiIllegal, /* &cpiANDBSU,  */
-    &cpiIllegal, /* &cpiANDI,    */
+    &cpiANDI,
     &cpiIllegal, /* &cpiANDNBSU, */
-    &cpiIllegal, /* &cpiBCOND,   */
-    &cpiIllegal, /* &cpiCAXI,    */
+    &cpiBCOND,
+    &cpiCAXI,
     &cpiIllegal, /* &cpiCLI,     */
     &cpiIllegal, /* &cpiCMP_IMM, */
     &cpiIllegal, /* &cpiCMP_REG, */

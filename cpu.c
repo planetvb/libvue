@@ -188,7 +188,12 @@ static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
     /* Decode the instruction operands */
     FMTDEFS[inst->format](inst);
 
-    /* Additional processing */
+    /* Additional format processing */
+    if (inst->format == 6)
+        inst->address = vb->cpu.registers[inst->register1] +
+            inst->displacement;
+
+    /* Additional instruction ID processing */
     switch (inst->instruction) {
         case VUE_BCOND:
             inst->true = vueCheckCondition(vb, inst->condition);
@@ -213,17 +218,33 @@ static int cpuExecute(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
     /* Decode the instruction */
     cpuDecode(vb, inst, 0);
 
+    /* Call the application-supplied access handler if available */
+    if (vb->debug.onexecute) {
+
+        /* Call the application handler */
+        break_code = vb->debug.onexecute(vb, inst);
+
+        /* An emulation break was requested */
+        if (break_code)
+            return break_code;
+    }
+
     /* Execute the appropriate instruction handler */
     break_code = INSTDEFS[inst->instruction](vb);
 
     /* Reset r0 in case the instruction changed it */
     vb->cpu.registers[0] = 0;
 
-    /* Update emulation state */
-    vb->cpu.stage = VUE_INTERRUPT;
+    /* An emulation break was requested */
+    if (break_code)
+        return break_code;
 
-    /* Relay the given break code back to the caller */
-    return break_code;
+    /* Update emulation state */
+    vb->cpu.pc    += vb->instruction.size;
+    vb->cpu.stage  = VUE_INTERRUPT;
+
+    /* No emulation break was requested */
+    return 0;
 }
 
 /* Fetch the first 16 bits of an instruction */

@@ -89,6 +89,62 @@ static void cpfFormatVII(VUE_INSTRUCTION *inst) {
 
 
 /*****************************************************************************
+ *                       Common Instruction Functions                        *
+ *****************************************************************************/
+
+/* Addition processing */
+static void cpiAdd(VUE_CONTEXT *vb, int reg, int32_t right) {
+    int32_t left;   /* Left-hand operand */
+    int32_t result; /* Operation output  */
+
+    /* Determine the result of the operation */
+    left   = vb->cpu.registers[reg];
+    result = left + right;
+
+    /* Update CPU state */
+    vb->cpu.registers[reg] = result;
+    vb->cpu.psw.cy = (uint32_t) result < (uint32_t) left ? 1 : 0;
+    vb->cpu.psw.ov = (~left ^ right & left ^ result) >> 31 & 1;
+    vb->cpu.psw.s  = result >> 31 & 1;
+    vb->cpu.psw.z  = result ? 0 : 1;
+}
+
+/* Bitwise AND processing */
+static void cpiAnd(VUE_CONTEXT *vb, int reg, int32_t right) {
+    int32_t left;   /* Left-hand operand */
+    int32_t result; /* Operation output  */
+
+    /* Determine the result of the operation */
+    left   = vb->cpu.registers[reg];
+    result = left & right;
+
+    /* Update CPU state */
+    vb->cpu.registers[reg] = result;
+    vb->cpu.psw.ov = 0;
+    vb->cpu.psw.s  = result >> 31 & 1;
+    vb->cpu.psw.z  = result ? 0 : 1;
+}
+
+/* Subtraction processing */
+static void cpiSubtract(VUE_CONTEXT *vb, int reg, int32_t right) {
+    int32_t left;   /* Left-hand operand */
+    int32_t result; /* Operation output  */
+
+    /* Determine the result of the operation */
+    left   = vb->cpu.registers[reg];
+    result = left - right;
+
+    /* Update CPU state */
+    vb->cpu.registers[reg] = result;
+    vb->cpu.psw.cy = (uint32_t) left < (uint32_t) right ? 1 : 0;
+    vb->cpu.psw.ov = (left ^ right & left ^ result) >> 31 & 1;
+    vb->cpu.psw.s  = result >> 31 & 1;
+    vb->cpu.psw.z  = result ? 0 : 1;
+}
+
+
+
+/*****************************************************************************
  *                           Instruction Functions                           *
  *****************************************************************************/
 
@@ -100,6 +156,115 @@ static int cpiIllegal(VUE_CONTEXT *vb){
 
     /* Raise an exception */
     return cpuRaiseException(vb, 0xFF90, &vb->instruction);
+}
+
+/* ADD - Add (immediate) */
+static int cpiADD_IMM(VUE_CONTEXT *vb) {
+
+    cpiAdd(
+        vb->instruction.register2,
+        vueSignExtend(vb->instruction.immediate, 5)
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state           */
+    return 0;            /* No emulation break was requested */
+}
+
+/* ADD - Add (register) */
+static int cpiADD_REG(VUE_CONTEXT *vb) {
+
+    cpiAdd(
+        vb->instruction.register2,
+        vb->cpu.registers[vb->instruction.register1]
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state           */
+    return 0;            /* No emulation break was requested */
+}
+
+/* ADDI - Add Immediate */
+static int cpiADDI(VUE_CONTEXT *vb) {
+
+    cpiAdd(
+        vb->instruction.register2,
+        vueSignExtend(vb->instruction.immediate, 16)
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state           */
+    return 0;            /* No emulation break was requested */
+}
+
+/* AND - And */
+static int cpiAND_REG(VUE_CONTEXT *vb) {
+
+    cpiAdd(
+        vb->instruction.register2,
+        vb->cpu.registers[vb->instruction.register1]
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state           */
+    return 0;            /* No emulation break was requested */
+}
+
+/* ANDI - And Immediate */
+static int cpiAND_IMM(VUE_CONTEXT *vb) {
+
+    cpiAdd(
+        vb->instruction.register2,
+        vb->instruction.immediate
+    );
+
+    vb->cpu.cycles += 1; /* Update emulation state           */
+    return 0;            /* No emulation break was requested */
+}
+
+/* BCOND - Branch on Condition */
+static int cpiBCOND(VUE_CONTEXT *vb) {
+
+    /* The branch was taken */
+    if (vueCheckCondition(vb->instruction.condition)) {
+        vb->cpu.pc = vb->cpu.pc + vb->instruction.displacement - 2;
+        vb->cpu.cycles += 3;
+    }
+
+    /* The branch was not taken */
+    else vb->cpu.cycles += 1;
+
+    /* No emulation break was requested */
+    return 0;
+}
+
+/* CAXI - Compare and Exchange Interlocked */
+static int cpiCAXI(VUE_CONTEXT *vb) {
+    VUE_ACCESS access;     /* Bus access descriptor                     */
+    int        break_code; /* Application-supplied emulation break code */
+
+    /* Read the lock value from memory */
+    access.format  = VUE_32;
+    access.address = vb->instruction.address;
+    break_code     = cpuRead(vb, &access);
+
+    /* An application break was requested */
+    if (break_code)
+        return break_code;
+
+    /* Perform a comparison */
+    cpiSubtract(vb, vb->instruction.register2, access.value);
+
+    /* Exchange lock values */
+    if (vb->cpu.psw.z) {
+
+         /* Write the exchange value to memory */
+         access.value = vue->cpu.registers[30];
+         break_code   = cpuWrite(vb, &access);
+
+         /* An emulation break was requested */
+         if (break_code)
+             return break_code;
+    }
+
+    vb->cpu.cycles += 26; /* Update emulation state           */
+    return 0;             /* No emulation break was requested */
 }
 
 

@@ -137,8 +137,8 @@ int vueEmulate(VUE_CONTEXT *vb, int32_t *cycles) {
         }
 
         /* CPU is halting */
-        else {
-          /* cycles_this = min(until_interrupt, *cycles) */
+        if (vb->cpu.cycles == 0) {
+          /* vb->cpu.cycles = min(until_interrupt, *cycles) */
         }
 
         /* Process hardware components */
