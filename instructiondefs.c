@@ -18,9 +18,8 @@
   3. This notice may not be removed or altered from any source distribution.
 */
 
+/* This file is included by vue.c and should not be compiled on its own. */
 
-
-/* This file is intended to be #included by vue.c */
 #ifdef VUEAPI
 
 
@@ -39,30 +38,23 @@
  *                                   Types                                   *
  *****************************************************************************/
 
-/* Format and instruction handler pointers */
-typedef void (*FMTDEF )(VUE_INSTRUCTION *);
-typedef int  (*INSTDEF)(VUE_CONTEXT *);
+/* Instruction execute handler pointer */
+typedef int (*INSTPROC)(VUE_CONTEXT *, VUE_INSTRUCTION *);
 
 /* Opcode translation descriptor */
 typedef struct {
-    uint8_t format;      /* Instruction format */
-    uint8_t sign_extend; /* Immediate operands are sign-extended */
+    uint8_t format;      /* Instruction encoding format */
     uint8_t instruction; /* libvue instruction ID */
+    uint8_t sign_extend; /* Immediate operands are sign-extended */
 } OPDEF;
 
-/* Instruction format handler lookup table */
-static const FMTDEF FMTDEFS[] = {
-    &cpfIllegal,
-    &cpfFormatI,
-    &cpfFormatII,
-    &cpfFormatIII,
-    &cpfFormatIV,
-    &cpfFormatV,
-    &cpfFormatVI,
-    &cpfFormatVII,
-};
 
-/* Opcode translation lookup table */
+
+/*****************************************************************************
+ *                               Lookup Tables                               *
+ *****************************************************************************/
+
+/* Opcode-level instruction data */
 static const OPDEF OPDEFS[] = {
     { 1, 0, VUE_MOV_REG   },
     { 1, 0, VUE_ADD_REG   },
@@ -130,7 +122,7 @@ static const OPDEF OPDEFS[] = {
     { 6, 0, VUE_OUT_W     }
 };
 
-/* Bit string instruction subopcode translation lookup table */
+/* Bit string instruction subopcode translation */
 static const uint8_t BITSTRINGDEFS[] = {
     VUE_SCH0BSU,
     VUE_SCH0BSD,
@@ -150,7 +142,7 @@ static const uint8_t BITSTRINGDEFS[] = {
     VUE_NOTBSU
 };
 
-/* Floating-point/Nintendo instruction subupcode translation lookup table */
+/* Floating-point/Nintendo instruction subupcode translation */
 static const uint8_t FLOATENDODEFS[] = {
     VUE_CMPF_S,
     VUE_ILLEGAL,
@@ -167,15 +159,15 @@ static const uint8_t FLOATENDODEFS[] = {
     VUE_MPYHW
 };
 
-/* Instruction execute handler lookup table */
-static const INSTDEF INSTDEFS[] = {
+/* Instruction execute handlers */
+static const INSTPROC INSTDEFS[] = {
     &cpiIllegal,
     &cpiADD_IMM,
     &cpiADD_REG,
-    &cpiIllegal, /* &cpiADDF_S,  */
+    &cpiIllegal, /* &cpiADDF_S, */
     &cpiADDI,
     &cpiAND,
-    &cpiIllegal, /* &cpiANDBSU,  */
+    &cpiIllegal, /* &cpiANDBSU, */
     &cpiANDI,
     &cpiIllegal, /* &cpiANDNBSU, */
     &cpiBCOND,
@@ -183,69 +175,69 @@ static const INSTDEF INSTDEFS[] = {
     &cpiCLI,
     &cpiCMP_IMM,
     &cpiCMP_REG,
-    &cpiIllegal, /* &cpiCMPF_S,  */
-    &cpiIllegal, /* &cpiCVT_SW,  */
-    &cpiIllegal, /* &cpiCVT_WS,  */
-    &cpiIllegal, /* &cpiDIV,     */
-    &cpiIllegal, /* &cpiDIVF_S,  */
-    &cpiIllegal, /* &cpiDIVU,    */
-    &cpiIllegal, /* &cpiHALT,    */
-    &cpiIllegal, /* &cpiIN_B,    */
-    &cpiIllegal, /* &cpiIN_H,    */
-    &cpiIllegal, /* &cpiIN_W,    */
-    &cpiIllegal, /* &cpiJAL,     */
-    &cpiIllegal, /* &cpiJMP,     */
-    &cpiIllegal, /* &cpiJR,      */
-    &cpiIllegal, /* &cpiLD_B,    */
-    &cpiIllegal, /* &cpiLD_H,    */
-    &cpiIllegal, /* &cpiLD_W,    */
-    &cpiIllegal, /* &cpiLDSR,    */
-    &cpiIllegal, /* &cpiMOV_IMM, */
-    &cpiIllegal, /* &cpiMOV_REG, */
-    &cpiIllegal, /* &cpiMOVBSU,  */
-    &cpiIllegal, /* &cpiMOVEA,   */
-    &cpiIllegal, /* &cpiMOVHI,   */
-    &cpiIllegal, /* &cpiMPYHW,   */
-    &cpiIllegal, /* &cpiMUL,     */
-    &cpiIllegal, /* &cpiMULF_S,  */
-    &cpiIllegal, /* &cpiMULU,    */
-    &cpiIllegal, /* &cpiNOT,     */
-    &cpiIllegal, /* &cpiNOTBSU,  */
-    &cpiIllegal, /* &cpiOR,      */
-    &cpiIllegal, /* &cpiORBSU,   */
-    &cpiIllegal, /* &cpiORI,     */
-    &cpiIllegal, /* &cpiORNBSU,  */
-    &cpiIllegal, /* &cpiOUT_B,   */
-    &cpiIllegal, /* &cpiOUT_H,   */
-    &cpiIllegal, /* &cpiOUT_W,   */
-    &cpiIllegal, /* &cpiRETI,    */
-    &cpiIllegal, /* &cpiREV,     */
-    &cpiIllegal, /* &cpiSAR_IMM, */
-    &cpiIllegal, /* &cpiSAR_REG, */
+    &cpiIllegal, /* &cpiCMPF_S, */
+    &cpiIllegal, /* &cpiCVT_SW, */
+    &cpiIllegal, /* &cpiCVT_WS, */
+    &cpiDIV,
+    &cpiIllegal, /* &cpiDIVF_S, */
+    &cpiDIVU,
+    &cpiHALT,
+    &cpiIN_B,
+    &cpiIN_H,
+    &cpiIN_W,
+    &cpiJAL,
+    &cpiJMP,
+    &cpiJR,
+    &cpiLD_B,
+    &cpiLD_H,
+    &cpiLD_W,
+    &cpiLDSR,
+    &cpiMOV_IMM,
+    &cpiMOV_REG,
+    &cpiIllegal, /* &cpiMOVBSU, */
+    &cpiMOVEA,
+    &cpiMOVHI,
+    &cpiMPYHW,
+    &cpiMUL,
+    &cpiIllegal, /* &cpiMULF_S, */
+    &cpiMULU,
+    &cpiNOT,
+    &cpiIllegal, /* &cpiNOTBSU, */
+    &cpiOR,
+    &cpiIllegal, /* &cpiORBSU, */
+    &cpiORI,
+    &cpiIllegal, /* &cpiORNBSU, */
+    &cpiOUT_B,
+    &cpiOUT_H,
+    &cpiOUT_W,
+    &cpiRETI,
+    &cpiREV,
+    &cpiSAR_IMM,
+    &cpiSAR_REG,
     &cpiIllegal, /* &cpiSCH0BSD, */
     &cpiIllegal, /* &cpiSCH0BSU, */
     &cpiIllegal, /* &cpiSCH1BSD, */
     &cpiIllegal, /* &cpiSCH1BSU, */
-    &cpiIllegal, /* &cpiSEI,     */
-    &cpiIllegal, /* &cpiSETF,    */
-    &cpiIllegal, /* &cpiSHL_IMM, */
-    &cpiIllegal, /* &cpiSHL_REG, */
-    &cpiIllegal, /* &cpiSHR_IMM, */
-    &cpiIllegal, /* &cpiSHR_REG, */
-    &cpiIllegal, /* &cpiST_B,    */
-    &cpiIllegal, /* &cpiST_H,    */
-    &cpiIllegal, /* &cpiST_W,    */
-    &cpiIllegal, /* &cpiSTSR,    */
-    &cpiIllegal, /* &cpiSUB,     */
-    &cpiIllegal, /* &cpiSUBF_S,  */
-    &cpiIllegal, /* &cpiTRAP,    */
+    &cpiSEI,
+    &cpiSETF,
+    &cpiSHL_IMM,
+    &cpiSHL_REG,
+    &cpiSHR_IMM,
+    &cpiSHR_REG,
+    &cpiST_B,
+    &cpiST_H,
+    &cpiST_W,
+    &cpiSTSR,
+    &cpiSUB,
+    &cpiIllegal, /* &cpiSUBF_S, */
+    &cpiTRAP,
     &cpiIllegal, /* &cpiTRNC_SW, */
-    &cpiIllegal, /* &cpiXB,      */
-    &cpiIllegal, /* &cpiXH,      */
-    &cpiIllegal, /* &cpiXOR,     */
-    &cpiIllegal, /* &cpiXORBSU,  */
-    &cpiIllegal, /* &cpiXORI,    */
-    &cpiIllegal  /* &cpiXORNBSU  */
+    &cpiXB,
+    &cpiXH,
+    &cpiXOR,
+    &cpiIllegal, /* &cpiXORBSU, */
+    &cpiXORI,
+    &cpiIllegal  /* &cpiXORNBSU */
 };
 
 

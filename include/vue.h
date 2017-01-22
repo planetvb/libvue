@@ -42,15 +42,22 @@ extern "C" {
  *****************************************************************************/
 
 /* Access formats */
-#define VUE_S8  0x88
-#define VUE_U8  0x08
-#define VUE_S16 0x90
-#define VUE_U16 0x10
-#define VUE_32  0x20
+#define VUE_8     0x08
+#define VUE_16    0x10
+#define VUE_32    0x20
+#define VUE_FATAL 0xFF
+#define VUE_S8    0x88
+#define VUE_S16   0x90
+#define VUE_U8    0x08
+#define VUE_U16   0x10
 
 /* Access modes */
 #define VUE_DEBUG    0
 #define VUE_INTERNAL 1
+
+/* Boolean constants */
+#define VUE_FALSE 0
+#define VUE_TRUE  1
 
 /* Condition IDs */
 #define VUE_C   1
@@ -73,6 +80,22 @@ extern "C" {
 #define VUE_T   5
 #define VUE_V   0
 #define VUE_Z   2
+
+/* Exception cause codes */
+#define VUE_ADDRESSTRAP   0xFFC0
+#define VUE_CARTRIDGE     0xFE20
+#define VUE_FIV           0xFF70
+#define VUE_FOV           0xFF64
+#define VUE_FRO           0xFF60
+#define VUE_FZD           0xFF68
+#define VUE_GAMEPAD       0xFE00
+#define VUE_INVALIDOPCODE 0xFF90
+#define VUE_LINK          0xFE30
+#define VUE_RESET         0xFFF0
+#define VUE_TRAPCC        0xFFA0
+#define VUE_TIMERZERO     0xFE10
+#define VUE_VIP           0xFE40
+#define VUE_ZERODIVISION  0xFF80
 
 /* Instruction IDs */
 #define VUE_ILLEGAL  0
@@ -156,7 +179,6 @@ extern "C" {
 /* CPU pipeline stages */
 #define VUE_EXECUTE   3
 #define VUE_FETCH     1
-#define VUE_FETCH16   1
 #define VUE_FETCH32   2
 #define VUE_INTERRUPT 0
 
@@ -186,107 +208,117 @@ typedef struct VUE_ACCESS      VUE_ACCESS;
 typedef struct VUE_CONTEXT     VUE_CONTEXT;
 typedef struct VUE_INSTRUCTION VUE_INSTRUCTION;
 
-/* Debugging callback function pointers */
-typedef int (*VUE_ACCESSPROC   )(VUE_CONTEXT *, VUE_ACCESS *);
-typedef int (*VUE_EXCEPTIONPROC)(VUE_CONTEXT *, uint16_t, VUE_INSTRUCTION *);
-typedef int (*VUE_EXECUTEPROC  )(VUE_CONTEXT *, VUE_INSTRUCTION *);
+/* Debugging hook callbacks */
+typedef int (*VUE_ACCESSPROC)   (VUE_CONTEXT *, VUE_ACCESS *);
+typedef int (*VUE_EXCEPTIONPROC)(VUE_CONTEXT *, uint16_t);
+typedef int (*VUE_EXECUTEPROC)  (VUE_CONTEXT *, VUE_INSTRUCTION *);
 
-/* Descriptor for bus accesses */
+/* Bus access descriptor */
 struct VUE_ACCESS {
-    uint32_t address; /* Bus address to access */
-    int32_t  value;   /* Value to write, or receives value read */
-    int8_t   format;  /* Data size/format */
+    uint32_t address; /* CPU address */
+    uint32_t cycles;  /* CPU cycles taken by access */
+    int32_t  value;   /* Value read/to write */
+    uint8_t  format;  /* Data format */
 };
 
-/* Descriptor for CPU instructions */
+/* Instruction descriptor */
 struct VUE_INSTRUCTION {
-    uint32_t address;      /* Effective address */
-    uint32_t bits;         /* Instruction binary data */
-    int32_t  displacement; /* Displacement distance */
+    uint32_t address;      /* Address of branch or bus access */
+    uint32_t bits;         /* Binary data */
+    int32_t  displacement; /* Branch displacement offset */
     int32_t  immediate;    /* Immediate data */
-    uint8_t  condition;    /* Condition ID */
-    uint8_t  format;       /* Binary format */
+    uint8_t  condition;    /* Condition for branching */
+    uint8_t  format;       /* Storage format */
     uint8_t  instruction;  /* libvue instruction ID */
-    uint8_t  opcode;       /* Instruction ID */
+    uint8_t  is_true;      /* The condition is satisfied */
+    uint8_t  opcode;       /* NVC instruction ID */
     uint8_t  register1;    /* Right-hand operand */
-    uint8_t  register2;    /* Left-hand operand, destination */
+    uint8_t  register2;    /* Left-hand operand/destination */
     uint8_t  sign_extend;  /* Immediate data is sign-extended */
-    uint8_t  size;         /* Binary size, in bytes */
-    uint8_t  subopcode;    /* Extended instruction ID */
-    uint8_t  true;         /* Condition status */
+    uint8_t  size;         /* Size in bytes of instruction */
+    uint8_t  subopcode;    /* Extended NVC instruction ID */
 };
 
-/* Top-level emulation state context */
+/* Top-level emulation state object */
 struct VUE_CONTEXT {
 
-    /* Debug settings */
+    /* Cartridge state */
     struct {
-        VUE_EXCEPTIONPROC onexception; /* Exception */
-        VUE_EXECUTEPROC   onexecute;   /* Execute */
-        VUE_ACCESSPROC    onread;      /* Read access */
-        VUE_ACCESSPROC    onwrite;     /* Write access */
-    } debug;
+        uint8_t  *ram;      /* RAM */
+        uint8_t  *rom;      /* Program ROM */
+        uint32_t  ram_size; /* Size in bytes of ram */
+        uint32_t  rom_size; /* Size in bytes of rom */
+    } cartridge;
 
-    /* Cartridge RAM state information */
-    struct {
-        uint8_t  *ram;      /* Cartridge RAM data */
-        uint32_t  ram_size; /* Size, in bytes, of RAM data */
-        uint8_t  *rom;      /* Cartridge ROM data */
-        uint32_t  rom_size; /* Size, in bytes, of ROM data */
-    } cart;
-
-    /* CPU state information */
+    /* CPU state */
     struct {
 
         /* System registers */
-        uint32_t adtre; /* Address Trap Register for Execution */
-        uint32_t chcw;  /* Cache Control Word */
-        uint32_t ecr;   /* Exception Cause Register */
-        uint32_t eipc;  /* Exception/Interrupt restore PC */
-        uint32_t eipsw; /* Exception/Interrupt restore PSW */
-        uint32_t fepc;  /* Duplexed Exception restore PC */
-        uint32_t fepsw; /* Duplexed Exception restore PSW */
+        uint32_t adtre; /* Hardware breakpoint address */
+        uint32_t chcw;  /* Instruction cache control */
+        uint32_t ecr;   /* Exception cause codes */
+        uint32_t eipc;  /* Exception restore PC */
+        uint32_t eipsw; /* Exception restore PSW */
+        uint32_t fepc;  /* Duplexed exception restore PC */
+        uint32_t fepsw; /* Duplexed exception restore PSW */
         uint32_t sr29;  /* "System Register 29" */
         uint32_t sr31;  /* "System Register 31" */
 
-        /* Program Status Word */
+        /* Status flags (PSW) */
         struct {
-            uint8_t ae;  /* Address trap enable */
+            uint8_t ae;  /* Hardware breakpoint enable */
             uint8_t cy;  /* Carry */
-            uint8_t ep;  /* Exception pending */
+            uint8_t ep;  /* Exception is processing */
             uint8_t fiv; /* Floating-point invalid operation */
             uint8_t fov; /* Floating-point overflow */
             uint8_t fpr; /* Floating-point precision degradation */
             uint8_t fro; /* Floating-point reserved operand */
             uint8_t fud; /* Floating-point underflow */
             uint8_t fzd; /* Floating-point zero division */
-            uint8_t i;   /* Interrupt masking level */
+            uint8_t i;   /* Interrupt mask level */
             uint8_t id;  /* Interrupt disable */
-            uint8_t np;  /* Duplexed exception ("NMI") pending */
+            uint8_t np;  /* Duplexed exception is processing */
             uint8_t ov;  /* Overflow */
             uint8_t s;   /* Sign */
             uint8_t z;   /* Zero */
         } psw;
 
-        /* Program registers */
+        /* Other registers */
         uint32_t pc;            /* Program counter */
         int32_t  registers[32]; /* Program registers */
 
-        /* CPU control */
-        int32_t cycles; /* Cycles for current emulation step */
-        uint8_t halt;   /* Halting status */
+        /* Miscellaneous state */
+        uint8_t halt;   /* Halt status */
+        uint8_t irq[5]; /* Interrupt requests */
         uint8_t stage;  /* Current pipeline stage */
-
     } cpu;
 
-    /* WRAM state information */
-    uint8_t wram[0x10000];
+    /* Debugging settings */
+    struct {
+        VUE_EXCEPTIONPROC onexception; /* Exception or interrupt */
+        VUE_EXECUTEPROC   onexecute;   /* Instruction execute */
+        VUE_ACCESSPROC    onread;      /* Read access */
+        VUE_ACCESSPROC    onwrite;     /* Write access */
+    } debug;
 
-    /* Library state fields */
-    VUE_INSTRUCTION instruction; /* Working data for CPU instructions */
-
+    /* Miscellaneous state */
+    int32_t          cycles;        /* CPU cycles for current emulation step */
+    VUE_INSTRUCTION  instruction;   /* Current instruction */
+    void            *tag;           /* Application data */
+    uint8_t          wram[0x10000]; /* System memory */
 };
 
+
+
+/*****************************************************************************
+ *                                  Macros                                   *
+ *****************************************************************************/
+
+/* Determine whether an exception cause code represents an interrupt */
+#define vueIsInterrupt(code) ((((code) & 0xFF00) == 0xFE00) ? 1 : 0)
+
+/* Determine whether an exception cause code is a TRAP exception */
+#define vueIsTRAP(code) ((((code) & 0xFFF0) == 0xFFA0) ? 1 : 0)
 
 
 /*****************************************************************************
@@ -295,10 +327,11 @@ struct VUE_CONTEXT {
 
 VUEAPI int      vueCheckCondition   (VUE_CONTEXT *vb, int id);
 VUEAPI int      vueEmulate          (VUE_CONTEXT *vb, int32_t *cycles);
+VUEAPI void     vueFetch            (VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t address);
 VUEAPI uint32_t vueGetSystemRegister(VUE_CONTEXT *vb, int id);
-VUEAPI void     vueRead             (VUE_CONTEXT *vb, VUE_ACCESS *access, int mode);
+VUEAPI void     vueRead             (VUE_CONTEXT *vb, VUE_ACCESS *access);
 VUEAPI uint32_t vueSetSystemRegister(VUE_CONTEXT *vb, int id, uint32_t value);
-VUEAPI void     vueWrite            (VUE_CONTEXT *vb, VUE_ACCESS *access, int mode);
+VUEAPI void     vueWrite            (VUE_CONTEXT *vb, VUE_ACCESS *access);
 
 
 

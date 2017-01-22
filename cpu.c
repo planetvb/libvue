@@ -18,10 +18,9 @@
   3. This notice may not be removed or altered from any source distribution.
 */
 
+/* This file is included by vue.c and should not be compiled on its own. */
 
-
-/* This file is intended to be #included by vue.c */
-#ifdef VUEAPI
+#ifdef VUE_API
 
 
 
@@ -41,102 +40,19 @@
  *                                   Types                                   *
  *****************************************************************************/
 
-/* Pipeline stage handler pointer */
-typedef int (*STAGEDEF)(VUE_CONTEXT *, VUE_INSTRUCTION *, uint32_t);
+/* Format decoder callback pointer */
+typedef void (*FMTPROC)(VUE_INSTRUCTION *);
 
 
 
 /*****************************************************************************
- *                           Non-Library Functions                           *
+ *                             Utility Functions                             *
  *****************************************************************************/
-
-/* Enter exception processing */
-/* RESEARCH: Is ECR.FECC cleared when a regular exception occurs? */
-/* RESEARCH: How many cycles does this take? */
-static int cpuRaiseException(VUE_CONTEXT *vb, uint16_t code,
-    VUE_INSTRUCTION *inst) {
-    VUE_ACCESS access;     /* Write access descriptor */
-    int        break_code; /* Application-supplied emulation break code */
-    uint32_t   psw;        /* Current value in PSW */
-
-    /* Call the application-supplied exception handler if available */
-    if (vb->debug.onexception) {
-
-        /* Call the exception handler */
-        break_code = vb->debug.onexception(vb, code, inst);
-
-        /* An emulation break was requested */
-        if (break_code)
-            return break_code;
-    }
-
-    /* Retrieve the current PSW value */
-    psw = vueGetSystemRegister(vb, VUE_PSW);
-
-    /* Fatal exception processing */
-    if (vb->cpu.psw.np) {
-        access.format = VUE_32;
-
-        /* Write exception code to debug memory */
-        access.address = 0x00000000;
-        access.value   = 0xFFFF0000 | code;
-        break_code     = cpuWrite(vb, &access);
-        if (break_code)
-            return break_code;
-
-        /* Write PSW to debug memory */
-        access.address = 0x00000004;
-        access.value   = psw;
-        break_code     = cpuWrite(vb, &access);
-        if (break_code)
-            return break_code;
-
-        /* Write PC to debug memory */
-        access.address = 0x00000008;
-        access.value   = vb->cpu.pc;
-        break_code     = cpuWrite(vb, &access);
-        if (break_code)
-            return break_code;
-
-        /* Halt the CPU until reset */
-        vb->cpu.halt = 1;
-        return 0;
-    }
-
-    /* Duplexed exception processing */
-    if (vb->cpu.psw.ep) {
-        vb->cpu.fepc   = vb->cpu.pc;
-        vb->cpu.fepsw  = psw;
-        vb->cpu.ecr    = (vb->cpu.ecr & 0x0000FFFF) | ((uint32_t) code << 16);
-        vb->cpu.psw.np = 1;
-        vb->cpu.pc     = 0xFFFFFFD0;
-    }
-
-    /* Regular exception processing */
-    else if (vb->cpu.psw.ep) {
-        vb->cpu.eipc   = vb->cpu.pc;
-        vb->cpu.eipsw  = psw;
-        vb->cpu.ecr    = (vb->cpu.ecr & 0xFFFF0000) | code;
-        vb->cpu.psw.ep = 1;
-        vb->cpu.pc     = 0xFFFF0000 |
-            ((code == 0xFF70) ? 0xFF60 : code & 0xFFF0);
-    }
-
-    /* Common exception processing */
-    vb->cpu.psw.id = 1;
-    vb->cpu.psw.ae = 0;
-
-    /* Update emulation state */
-    /* vb->cpu.cycles += 0; */
-
-    /* No emulation break was requested */
-    return 0;
-}
 
 /* Perform instruction cache commands */
 /* RESEARCH: Can ICC and ICD/ICR be performed simultaneously? */
-/* RESEARCH: How many cycles does this take? */
-static uint32_t cpuCacheControl(VUE_CONTEXT *vb, uint32_t value) {
+/* RESEARCH: How many cycles do these operations take? */
+static int cpuCacheControl(VUE_CONTEXT *vb, uint32_t value, int internal) {
     int32_t cec; /* Cache Entry Count */
     int32_t cen; /* Cache Entry Number */
     int     x;   /* Iterator */
@@ -172,192 +88,296 @@ static uint32_t cpuCacheControl(VUE_CONTEXT *vb, uint32_t value) {
         /* restore_from_address(value & 0xFFFFFF00) */
     }
 
-    /* Update emulation state */
-    /* vb->cpu.cycles += 0; */
+    /* Suppress unused parameter warning */
+    internal = internal;
 
-    /* Update and return the system register value */
-    return vb->cpu.chcw = value & ICE;
+    /* Update emulation state */
+    vb->cpu.chcw = value & ICE;
+
+    return 0;
 }
 
+/* Determine whether a particular status condition is met */
+static int cpuCheckCondition(VUE_CONTEXT *vb, int id) {
+
+    /* Select operation by condition ID */
+    switch (id) {
+        case VUE_V:  return vb->cpu.psw.ov;
+        case VUE_C:  return vb->cpu.psw.cy;
+        case VUE_Z:  return vb->cpu.psw.z;
+        case VUE_NH: return vb->cpu.psw.cy | vb->cpu.psw.z;
+        case VUE_N:  return vb->cpu.psw.s;
+        case VUE_T:  return 1;
+        case VUE_LT: return vb->cpu.psw.s ^ vb->cpu.psw.ov;
+        case VUE_LE: return (vb->cpu.psw.s ^ vb->cpu.psw.ov) | vb->cpu.psw.z;
+        case VUE_NV: return vb->cpu.psw.ov ^ 1;
+        case VUE_NC: return vb->cpu.psw.cy ^ 1;
+        case VUE_NZ: return vb->cpu.psw.z ^ 1;
+        case VUE_H:  return (vb->cpu.psw.cy | vb->cpu.psw.z) ^ 1;
+        case VUE_P:  return vb->cpu.psw.s ^ 1;
+        case VUE_F:  return 0;
+        case VUE_GE: return vb->cpu.psw.s ^ vb->cpu.psw.ov ^ 1;
+        case VUE_GT: return ((vb->cpu.psw.s^vb->cpu.psw.ov) | vb->cpu.psw.z)^1;
+        default:;
+    }
+
+    /* Invalid condition ID */
+    return 0;
+}
+
+/* Set a value in a system register */
+static int cpuLDSR(VUE_CONTEXT *vb, int id, uint32_t value, int internal) {
+
+    /* Select the system register by its ID */
+    switch (id) {
+        case VUE_EIPC:  vb->cpu.eipc  = value & (uint32_t) -2; break;
+        case VUE_EIPSW: vb->cpu.eipsw = value;                 break;
+        case VUE_FEPC:  vb->cpu.fepc  = value & (uint32_t) -2; break;
+        case VUE_FEPSW: vb->cpu.fepsw = value;                 break;
+        case VUE_ADTRE: vb->cpu.adtre = value & (uint32_t) -2; break;
+        case VUE_SR29:  vb->cpu.sr29  = value;                 break;
+        case VUE_SR31:  vb->cpu.sr31  = value & 1;             break;
+        case VUE_PSW:
+            vb->cpu.psw.z   = value >>  0 &  1;
+            vb->cpu.psw.s   = value >>  1 &  1;
+            vb->cpu.psw.ov  = value >>  2 &  1;
+            vb->cpu.psw.cy  = value >>  3 &  1;
+            vb->cpu.psw.fpr = value >>  4 &  1;
+            vb->cpu.psw.fud = value >>  5 &  1;
+            vb->cpu.psw.fov = value >>  6 &  1;
+            vb->cpu.psw.fzd = value >>  7 &  1;
+            vb->cpu.psw.fiv = value >>  8 &  1;
+            vb->cpu.psw.fro = value >>  9 &  1;
+            vb->cpu.psw.id  = value >> 12 &  1;
+            vb->cpu.psw.ae  = value >> 13 &  1;
+            vb->cpu.psw.ep  = value >> 14 &  1;
+            vb->cpu.psw.np  = value >> 15 &  1;
+            vb->cpu.psw.i   = value >> 16 & 15;
+            break;
+
+        /* Instruction cache dump and restore operations access the bus */
+        case VUE_CHCW:
+            return cpuCacheControl(vb, value, internal);
+
+        default:;
+    }
+
+    return 0;
+}
+
+/* Retrieve the value in a system register */
+static uint32_t cpuSTSR(VUE_CONTEXT *vb, int id) {
+
+    /* Select the system register by its ID */
+    switch (id) {
+        case VUE_EIPC:  return vb->cpu.eipc;
+        case VUE_EIPSW: return vb->cpu.eipsw;
+        case VUE_FEPC:  return vb->cpu.fepc;
+        case VUE_FEPSW: return vb->cpu.fepsw;
+        case VUE_ECR:   return vb->cpu.ecr;
+        case VUE_PIR:   return PIR;
+        case VUE_TKCW:  return TKCW;
+        case VUE_CHCW:  return vb->cpu.chcw;
+        case VUE_ADTRE: return vb->cpu.adtre;
+        case VUE_SR29:  return vb->cpu.sr29;
+        case VUE_SR30:  return SR30;
+        case VUE_SR31:  return vb->cpu.sr31;
+        case VUE_PSW:
+            return
+                ((uint32_t) vb->cpu.psw.z   <<  0) |
+                ((uint32_t) vb->cpu.psw.s   <<  1) |
+                ((uint32_t) vb->cpu.psw.ov  <<  2) |
+                ((uint32_t) vb->cpu.psw.cy  <<  3) |
+                ((uint32_t) vb->cpu.psw.fpr <<  4) |
+                ((uint32_t) vb->cpu.psw.fud <<  5) |
+                ((uint32_t) vb->cpu.psw.fov <<  6) |
+                ((uint32_t) vb->cpu.psw.fzd <<  7) |
+                ((uint32_t) vb->cpu.psw.fiv <<  8) |
+                ((uint32_t) vb->cpu.psw.fro <<  9) |
+                ((uint32_t) vb->cpu.psw.id  << 12) |
+                ((uint32_t) vb->cpu.psw.ae  << 13) |
+                ((uint32_t) vb->cpu.psw.ep  << 14) |
+                ((uint32_t) vb->cpu.psw.np  << 15) |
+                (((uint32_t) vb->cpu.psw.i & 15) << 16)
+            ;
+        default:;
+    }
+
+    /* An invalid system register ID was specified */
+    return 0;
+}
+
+
+
+/*****************************************************************************
+ *                            Pipeline Functions                             *
+ *****************************************************************************/
+
 /* Decode a fetched instruction */
-static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
+static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
 
-    /* Suppress unused parameter warning */
-    pc = pc;
+    /* Instruction format handler lookup table */
+    static const FMTPROC FORMATS[] = {
+        &cpfIllegal,  &cpfFormatI, &cpfFormatII, &cpfFormatIII,
+        &cpfFormatIV, &cpfFormatV, &cpfFormatVI, &cpfFormatVII,
+    };
 
-    /* Decode the instruction operands */
-    FMTDEFS[inst->format](inst);
+    /* Decode the binary operands of the instruction */
+    FORMATS[inst->format](inst);
 
-    /* Additional format processing */
-    if (inst->format == 6)
-        inst->address = vb->cpu.registers[inst->register1] +
-            inst->displacement;        
+    /* Additional processing by format */
+    switch (inst->format) {
+        case 3: case 4: /* Relative branch */
+            inst->address = (vb->cpu.pc + inst->displacement) & (int32_t) -2;
+            break;
+        case 6: /* Load/store */
+            inst->address = inst->displacement +
+                (uint32_t) vb->cpu.registers[inst->register1];
+            break;
+        default:;
+    }
 
-    /* Additional instruction ID processing */
+    /* Additional processing by instruction */
     switch (inst->instruction) {
         case VUE_BCOND:
-            inst->true = vueCheckCondition(vb, inst->condition);
+            inst->is_true = cpuCheckCondition(vb, inst->condition);
             break;
         case CPI_BITSTRING:
             inst->instruction = BITSTRINGDEFS[inst->subopcode];
             break;
         case CPI_FLOATENDO:
             inst->instruction = FLOATENDODEFS[inst->subopcode];
-            break;
         default:;
     }
 }
 
-/* Execute an instruction */
-static int cpuExecute(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
-    int break_code; /* Application-supplied emulation break code */
-
-    /* Suppress unused parameter warning */
-    pc = pc;
+/* Execute a fetched instruction */
+static int cpuExecute(VUE_CONTEXT *vb) {
+    int break_code; /* Emulation break request */
 
     /* Decode the instruction */
-    cpuDecode(vb, inst, 0);
+    cpuDecode(vb, &vb->instruction);
 
-    /* Call the application-supplied access handler if available */
-    if (vb->debug.onexecute) {
-
-        /* Call the application handler */
-        break_code = vb->debug.onexecute(vb, inst);
-
-        /* An emulation break was requested */
-        if (break_code)
-            return break_code;
+    /* Call the application-supplied debug callback if available */
+    if (vb->debug.onexecute != NULL) {
+        break_code = vb->debug.onexecute(vb, &vb->instruction);
+        if (break_code) return break_code;
     }
 
-    /* Execute the appropriate instruction handler */
-    break_code = INSTDEFS[inst->instruction](vb);
+    /* Execute the instruction */
+    break_code = INSTDEFS[vb->instruction.instruction](vb, &vb->instruction);
 
-    /* Reset r0 in case the instruction changed it */
+    /* Reset r0 in case it got changed */
     vb->cpu.registers[0] = 0;
 
     /* An emulation break was requested */
-    if (break_code)
-        return break_code;
+    if (break_code) return break_code;
 
     /* Update emulation state */
-    vb->cpu.pc    += vb->instruction.size;
-    vb->cpu.stage  = VUE_INTERRUPT;
+    vb->cpu.stage = VUE_INTERRUPT;
 
-    /* No emulation break was requested */
     return 0;
 }
 
 /* Fetch the first 16 bits of an instruction */
-static int cpuFetch16(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
-    VUE_ACCESS  access;     /* Read access descriptor */
-    int         break_code; /* Application-supplied emulation break code */
-    OPDEF      *opdef;      /* Opcode translation descriptor */
+static int cpuFetch16(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst,
+    uint32_t address) {
+    VUE_ACCESS  access;     /* Bus access descriptor */
+    int         break_code; /* Emulation break request */
+    OPDEF      *def;        /* Opcode-level instruction definition */
 
-    /* Read the bits from the memory bus */
-    access.address = pc;
+    /* Configure the access */
+    access.cycles  = 0;
     access.format  = VUE_U16;
-    break_code     = cpuRead(vb, &access);
+    access.address = address;
 
-    /* An emulation break was requested */
-    if (break_code)
-        return break_code;
+    /* A library-internal access was requested */
+    if (inst == &vb->instruction) {
+        break_code = cpuRead(vb, &access);
+        if (break_code) return break_code;
+    }
 
-    /* Process the opcode translation from the loaded bits */
+    /* An external access was requested */
+    else busRead(vb, &access);
+
+    /* Parse the opcode from the loaded bits */
+    inst->opcode = (access.value >> 10) & 0x3F;
+    def = (OPDEF *) &OPDEFS[inst->opcode];
+
+    /* Configure instruction descriptor */
     inst->bits        = access.value;
-    inst->opcode      = access.value >> 10 & 63;
-    opdef             = (OPDEF *) &OPDEFS[inst->opcode];
-    inst->format      = opdef->format;
-    inst->instruction = opdef->instruction;
-    inst->sign_extend = opdef->sign_extend;
-    inst->size        = (opdef->format < 4) ? 2 : 4;
+    inst->format      = def->format;
+    inst->instruction = def->instruction;
+    inst->sign_extend = def->sign_extend;
+    inst->size        = (inst->format < 4) ? 2 : 4;
 
-    /* The fetch was requested externally */
-    if (inst != &vb->instruction)
-        return 0;
-    
     /* Update emulation state */
-    vb->cpu.stage = (opdef->format < 4) ? VUE_EXECUTE : VUE_FETCH32;
+    if (inst == &vb->instruction) {
+        vb->cpu.stage  = (inst->format < 4) ? VUE_EXECUTE : VUE_FETCH32;
+        vb->cycles    += access.cycles;
+    }
 
-    /* No emulation break was requested */
     return 0;
 }
 
-/* Fetch the second 16 bits of a 32-bit instruction */
-static int cpuFetch32(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
-    VUE_ACCESS access;     /* Read access descriptor */
-    int        break_code; /* Application-supplied emulation break code */
+/* Fetch the second 16 bits of an instruction */
+static int cpuFetch32(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst,
+    uint32_t address) {
+    VUE_ACCESS access;     /* Bus access descriptor */
+    int        break_code; /* Emulation break request */
 
-    /* Read the bits from the memory bus */
-    access.address = pc + 2;
+    /* Configure the access */
+    access.cycles  = 0;
     access.format  = VUE_U16;
-    break_code     = cpuRead(vb, &access);
+    access.address = address + 2;
 
-    /* An emulation break was requested */
-    if (break_code)
-        return break_code;
+    /* A library-internal access was requested */
+    if (inst == &vb->instruction) {
+        break_code = cpuRead(vb, &access);
+        if (break_code) return break_code;
+    }
 
-    /* Update instruction information */
-    inst->bits = inst->bits << 16 | access.value;
+    /* An external access was requested */
+    else busRead(vb, &access);
 
-    /* The fetch was requested externally */
-    if (inst != &vb->instruction)
-        return 0;
+    /* Configure instruction descriptor */
+    inst->bits = (inst->bits << 16) | access.value;
 
     /* Update emulation state */
-    vb->cpu.stage = VUE_EXECUTE;
+    if (inst == &vb->instruction) {
+        vb->cpu.stage  = VUE_EXECUTE;
+        vb->cycles    += access.cycles;
+    }
 
-    /* No emulation break was requested */
     return 0;
 }
 
-/* Pipeline stage handler for interrupt checks */
-static int cpuInterrupt(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
-    int break_code; /* Application-supplied emulation break code */
+/* Check for and process interrupts */
+static int cpuInterrupt(VUE_CONTEXT *vb) {
+    int break_code; /* Emulation break request */
     int level;      /* Interrupt level */
 
-    /* Interrupt code lookup table */
-    static const uint16_t CODES[] = {
-        0xFE00, /* Game pad */
-        0xFE10, /* Timer */
-        0xFE20, /* Cartridge */
-        0xFE30, /* Link */
-        0xFE40  /* VIP */
-    };
+    /* Check for the interrupt with the highest priority */
+    for (level = 4; level >= 0; level--)
+        if (vb->cpu.irq[level]) break;
 
-    /* Suppress unused parameter warnings */
-    inst = inst;
-    pc   = pc;
-
-    /* Default is no interrupt */
-    level = -1;
-
-    /* Determine whether an interrupt occurred */
-    if (!vb->cpu.psw.np && !vb->cpu.psw.ep && !vb->cpu.psw.id) {
-        /*      if (vipInterrupt(vb)) level = 4; */
-        /* else if (lnkInterrupt(vb)) level = 3; */
-        /* else if (tmrInterrupt(vb)) level = 1; */
-        /* else if (padInterrupt(vb)) level = 0; */
-    }
-
-    /* An interrupt occurred */
-    if (level != -1 && level <= vb->cpu.psw.i) {
+    /* Determine whether interrupts should be processed */
+    if (
+        !vb->cpu.psw.np &&
+        !vb->cpu.psw.ep &&
+        !vb->cpu.psw.id &&
+        vb->cpu.psw.i <= level
+    ) {
 
         /* Raise an exception */
-        break_code = cpuRaiseException(vb, CODES[level], NULL);
-
-        /* An emulation break was requested */
-        if (break_code)
-            return break_code;
-
-        /* CPU configuration */
-        vb->cpu.halt  = 0;
-        vb->cpu.psw.i = level + 1;
+        break_code = cpuRaiseException(vb, 0xFE00 | (level << 4));
+        if (break_code) return break_code;
     }
 
     /* Update emulation state */
-    vb->cpu.stage = VUE_FETCH16;
+    if (!vb->cpu.halt)
+        vb->cpu.stage = VUE_FETCH;
 
-    /* No emulation break was requested */
     return 0;
 }
 
@@ -367,59 +387,103 @@ static int cpuInterrupt(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t pc) {
  *                             Library Functions                             *
  *****************************************************************************/
 
-/* One emulation iteration for CPU operations */
+/* Emulate the CPU for one emulation step */
 static int cpuEmulate(VUE_CONTEXT *vb) {
-    int break_code; /* Application-supplied emulation break code */
+    switch (vb->cpu.stage) {
+        case VUE_FETCH:     return cpuFetch16(vb, &vb->instruction,vb->cpu.pc);
+        case VUE_FETCH32:   return cpuFetch32(vb, &vb->instruction,vb->cpu.pc);
+        case VUE_EXECUTE:   return cpuExecute(vb);
+        case VUE_INTERRUPT: return cpuInterrupt(vb);
+        default:;
+    }
+    return 0;
+}
 
-    /* Pipeline stage handler lookup table */
-    static const STAGEDEF STAGES[] =
-        { &cpuInterrupt, &cpuFetch16, &cpuFetch32, &cpuExecute };
+/* Raise an exception */
+/* RESEARCH: Is ECR.FECC cleared on regular exception? */
+/* RESEARCH: How many cycles does this take? */
+static int cpuRaiseException(VUE_CONTEXT *vb, uint16_t code) {
+    VUE_ACCESS access;     /* Bus access descriptor */
+    int        break_code; /* Emulation break request */
 
-    /* Keep processing until CPU time elapses */
-    for (vb->cpu.cycles = 0; vb->cpu.cycles == 0 && !vb->cpu.halt;) {
-
-        /* Process the pipeline stage */
-        break_code = STAGES[vb->cpu.stage](vb, &vb->instruction, vb->cpu.pc);
-
-        /* An emulation break was requested */
-        if (break_code)
-            return break_code;
+    /* Call the application-supplied debug callback if available */
+    if (vb->debug.onexception != NULL) {
+        break_code = vb->debug.onexception(vb, code);
+        if (break_code) return break_code;
     }
 
-    /* No emulation break was requested */
+    /* A fatal exception occurred */
+    if (vb->cpu.psw.np) {
+
+        /* Write the debug information to memory */
+        access.cycles = 0;
+        access.format = VUE_FATAL;
+        access.value  = ((int32_t) 0xFFFF << 16) | code;
+        break_code = cpuWrite(vb, &access);
+        if (break_code) return break_code;
+
+        /* Update emulation state */
+        vb->cpu.halt  = 1;
+        vb->cycles   += access.cycles;
+        return 0;
+    }
+
+    /* A duplexed exception occurred */
+    if (vb->cpu.psw.ep) {
+        vb->cpu.fepc    = vb->cpu.pc;
+        vb->cpu.fepsw   = cpuSTSR(vb, VUE_PSW);
+        vb->cpu.ecr    |= (uint32_t) code << 16;
+        vb->cpu.psw.np  = 1;
+        vb->cpu.pc      = ((uint32_t) 0xFFFF << 16) | 0xFFD0;
+    }
+
+    /* A regular exception occurred */
+    else {
+        vb->cpu.eipc   = vb->cpu.pc;
+        vb->cpu.eipsw  = cpuSTSR(vb, VUE_PSW);
+        vb->cpu.ecr    = code;
+        vb->cpu.psw.ep = 1;
+        vb->cpu.pc     = ((uint32_t) 0xFFFF << 16) |
+            ((code == 0xFF70) ? 0xFF60 : code & 0xFFF0);
+    }
+
+    /* An interrupt occurred */
+    if (vueIsInterrupt(code)) {
+        vb->cpu.psw.i = ((code >> 4) & 15) + 1;
+        vb->cpu.halt  = 0;
+    }
+
+    /* Common processing */
+    vb->cpu.psw.id = 1;
+    vb->cpu.psw.ae = 0;
+
     return 0;
 }
 
-/* Perform a read on the CPU bus */
-/* Returns non-zero if the application requests an emulation break */
+/* Read a value from the CPU bus */
 static int cpuRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
-    /* Call the application-supplied access handler if available */
-    if (vb->debug.onread)
+    /* Use the application-supplied debug callback if available */
+    if (vb->debug.onread != NULL)
         return vb->debug.onread(vb, access);
 
-    /* Call the bus handler directly */
-    vb->cpu.cycles += busRead(vb, access);
-
-    /* No emulation break was requested */
+    /* Use the library routine */
+    busRead(vb, access);
     return 0;
 }
 
-/* Perform a write on the CPU bus */
-/* Returns non-zero if the application requests an emulation break */
+/* Write a value to the CPU bus */
 static int cpuWrite(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 
-    /* Call the application-supplied access handler if available */
-    if (vb->debug.onwrite)
+    /* Use the application-supplied debug callback if available */
+    if (vb->debug.onwrite != NULL)
         return vb->debug.onwrite(vb, access);
 
-    /* Call the bus handler directly */
-    vb->cpu.cycles += busWrite(vb, access);
-
-    /* No emulation break was requested */
+    /* Use the library routine */
+    busWrite(vb, access);
     return 0;
 }
 
 
 
-#endif /* VUEAPI */
+#endif /* VUE_API */
