@@ -81,6 +81,10 @@ extern "C" {
 #define VUE_V   0
 #define VUE_Z   2
 
+/* Error constants */
+#define VUE_NOERROR 0
+#define VUE_BADARG  1
+
 /* Exception cause codes */
 #define VUE_ADDRESSTRAP   0xFFC0
 #define VUE_CARTRIDGE     0xFE20
@@ -256,13 +260,18 @@ struct VUE_CONTEXT {
         /* System registers */
         uint32_t adtre; /* Hardware breakpoint address */
         uint32_t chcw;  /* Instruction cache control */
-        uint32_t ecr;   /* Exception cause codes */
         uint32_t eipc;  /* Exception restore PC */
         uint32_t eipsw; /* Exception restore PSW */
         uint32_t fepc;  /* Duplexed exception restore PC */
         uint32_t fepsw; /* Duplexed exception restore PSW */
         uint32_t sr29;  /* "System Register 29" */
         uint32_t sr31;  /* "System Register 31" */
+
+        /* Exception cause codes */
+        struct {
+            uint16_t eicc; /* Exception or interrupt */
+            uint16_t fecc; /* Duplexed exception */
+        } ecr;
 
         /* Status flags (PSW) */
         struct {
@@ -301,6 +310,13 @@ struct VUE_CONTEXT {
         VUE_ACCESSPROC    onwrite;     /* Write access */
     } debug;
 
+    /* VIP state */
+    struct {
+        uint16_t irq_enable;
+        uint16_t irq_pending;
+        uint8_t  memory[0x40000]; /* Memory */
+    } vip;
+
     /* Miscellaneous state */
     int32_t          cycles;        /* CPU cycles for current emulation step */
     VUE_INSTRUCTION  instruction;   /* Current instruction */
@@ -329,7 +345,9 @@ VUEAPI int      vueCheckCondition   (VUE_CONTEXT *vb, int id);
 VUEAPI int      vueEmulate          (VUE_CONTEXT *vb, int32_t *cycles);
 VUEAPI void     vueFetch            (VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t address);
 VUEAPI uint32_t vueGetSystemRegister(VUE_CONTEXT *vb, int id);
+VUEAPI int      vueInitialize       (VUE_CONTEXT *vb, uint8_t *rom, uint32_t rom_size, uint8_t *sram, uint32_t sram_size);
 VUEAPI void     vueRead             (VUE_CONTEXT *vb, VUE_ACCESS *access);
+VUEAPI void     vueReset            (VUE_CONTEXT *vb);
 VUEAPI uint32_t vueSetSystemRegister(VUE_CONTEXT *vb, int id, uint32_t value);
 VUEAPI void     vueWrite            (VUE_CONTEXT *vb, VUE_ACCESS *access);
 

@@ -617,6 +617,7 @@ static int cpiOUT_W(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
 }
 
 /* Return from Trap or Interrupt */
+/* RESEARCH: Can this trigger cache load/restore and the like? */
 static int cpiRETI(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
     int      break_code; /* Emulation break request */
     uint32_t pc;         /* Restore PC */
@@ -647,9 +648,8 @@ static int cpiRETI(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
 
 /* Reverse Bits in Word */
 static int cpiREV(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
-    uint8_t *dest;  /* Direct access to output bytes */
-    uint8_t *src;   /* Direct access to input bytes */
-    int32_t  value; /* Temporary value */
+    uint8_t *reg1; /* Direct access to input bytes */
+    uint8_t *reg2; /* Direct access to output bytes */
 
     /* Bit-reversed byte lookup table */
     static const uint8_t FLIPS[] = {
@@ -675,15 +675,14 @@ static int cpiREV(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
     };
 
     /* Configure references */
-    dest  = (uint8_t *) &vb->cpu.registers[inst->register2];
-    src   = (uint8_t *) &value;
-    value = *(int32_t *)dest;
+    reg1 = (uint8_t *) &vb->cpu.registers[inst->register1];
+    reg2 = (uint8_t *) &vb->cpu.registers[inst->register2];
 
     /* Perform operation */
-    dest[0] = FLIPS[src[3]];
-    dest[1] = FLIPS[src[2]];
-    dest[2] = FLIPS[src[1]];
-    dest[3] = FLIPS[src[0]];
+    reg2[0] = FLIPS[reg1[3]];
+    reg2[1] = FLIPS[reg1[2]];
+    reg2[2] = FLIPS[reg1[1]];
+    reg2[3] = FLIPS[reg1[0]];
 
     return cpoUpdate(vb, 22);
 }
@@ -715,8 +714,7 @@ static int cpiSEI(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
 
 /* Set Flag Condition */
 static int cpiSETF(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
-    vb->cpu.registers[inst->register2] =
-        cpuCheckCondition(vb, inst->immediate & 15);
+    vb->cpu.registers[inst->register2] = inst->is_true ? 1 : 0;
     return cpoUpdate(vb, 1);
 }
 
@@ -773,7 +771,7 @@ static int cpiST_W(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
 
 /* Store Contents of System Register */
 static int cpiSTSR(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
-    vb->cpu.registers[inst->register2] = cpuSTSR(vb, inst->immediate);
+    vb->cpu.registers[inst->register2] = cpuSTSR(vb, inst->immediate & 31);
     return cpoUpdate(vb, 8);
 }
 

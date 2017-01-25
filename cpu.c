@@ -22,7 +22,7 @@
 
 #ifdef VUE_API
 
-
+#include <stdio.h>
 
 /*****************************************************************************
  *                                 Constants                                 *
@@ -174,7 +174,6 @@ static uint32_t cpuSTSR(VUE_CONTEXT *vb, int id) {
         case VUE_EIPSW: return vb->cpu.eipsw;
         case VUE_FEPC:  return vb->cpu.fepc;
         case VUE_FEPSW: return vb->cpu.fepsw;
-        case VUE_ECR:   return vb->cpu.ecr;
         case VUE_PIR:   return PIR;
         case VUE_TKCW:  return TKCW;
         case VUE_CHCW:  return vb->cpu.chcw;
@@ -182,6 +181,11 @@ static uint32_t cpuSTSR(VUE_CONTEXT *vb, int id) {
         case VUE_SR29:  return vb->cpu.sr29;
         case VUE_SR30:  return SR30;
         case VUE_SR31:  return vb->cpu.sr31;
+        case VUE_ECR:
+            return
+                ((uint32_t) vb->cpu.ecr.eicc <<  0) |
+                ((uint32_t) vb->cpu.ecr.fecc << 16)
+            ;
         case VUE_PSW:
             return
                 ((uint32_t) vb->cpu.psw.z   <<  0) |
@@ -214,7 +218,8 @@ static uint32_t cpuSTSR(VUE_CONTEXT *vb, int id) {
  *****************************************************************************/
 
 /* Decode a fetched instruction */
-static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
+static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst,
+    uint32_t address) {
 
     /* Instruction format handler lookup table */
     static const FMTPROC FORMATS[] = {
@@ -228,7 +233,7 @@ static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
     /* Additional processing by format */
     switch (inst->format) {
         case 3: case 4: /* Relative branch */
-            inst->address = (vb->cpu.pc + inst->displacement) & (int32_t) -2;
+            inst->address = (address + inst->displacement) & (int32_t) -2;
             break;
         case 6: /* Load/store */
             inst->address = inst->displacement +
@@ -239,6 +244,8 @@ static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
 
     /* Additional processing by instruction */
     switch (inst->instruction) {
+        case VUE_SETF:
+            inst->condition = inst->immediate & 15;
         case VUE_BCOND:
             inst->is_true = cpuCheckCondition(vb, inst->condition);
             break;
@@ -247,6 +254,7 @@ static void cpuDecode(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst) {
             break;
         case CPI_FLOATENDO:
             inst->instruction = FLOATENDODEFS[inst->subopcode];
+            break;
         default:;
     }
 }
@@ -256,7 +264,7 @@ static int cpuExecute(VUE_CONTEXT *vb) {
     int break_code; /* Emulation break request */
 
     /* Decode the instruction */
-    cpuDecode(vb, &vb->instruction);
+    cpuDecode(vb, &vb->instruction, vb->cpu.pc);
 
     /* Call the application-supplied debug callback if available */
     if (vb->debug.onexecute != NULL) {
@@ -430,20 +438,20 @@ static int cpuRaiseException(VUE_CONTEXT *vb, uint16_t code) {
 
     /* A duplexed exception occurred */
     if (vb->cpu.psw.ep) {
-        vb->cpu.fepc    = vb->cpu.pc;
-        vb->cpu.fepsw   = cpuSTSR(vb, VUE_PSW);
-        vb->cpu.ecr    |= (uint32_t) code << 16;
-        vb->cpu.psw.np  = 1;
-        vb->cpu.pc      = ((uint32_t) 0xFFFF << 16) | 0xFFD0;
+        vb->cpu.fepc     = vb->cpu.pc;
+        vb->cpu.fepsw    = cpuSTSR(vb, VUE_PSW);
+        vb->cpu.ecr.fecc = code;
+        vb->cpu.psw.np   = 1;
+        vb->cpu.pc       = ((uint32_t) 0xFFFF << 16) | 0xFFD0;
     }
 
     /* A regular exception occurred */
     else {
-        vb->cpu.eipc   = vb->cpu.pc;
-        vb->cpu.eipsw  = cpuSTSR(vb, VUE_PSW);
-        vb->cpu.ecr    = code;
-        vb->cpu.psw.ep = 1;
-        vb->cpu.pc     = ((uint32_t) 0xFFFF << 16) |
+        vb->cpu.eipc     = vb->cpu.pc;
+        vb->cpu.eipsw    = cpuSTSR(vb, VUE_PSW);
+        vb->cpu.ecr.eicc = code;
+        vb->cpu.psw.ep   = 1;
+        vb->cpu.pc       = ((uint32_t) 0xFFFF << 16) |
             ((code == 0xFF70) ? 0xFF60 : code & 0xFFF0);
     }
 

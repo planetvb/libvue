@@ -49,9 +49,17 @@
  *                             Library Functions                             *
  *****************************************************************************/
 
+/* Determine whether a number is a power of 2 */
+static int vueIsPowerOfTwo(uint32_t x) {
+    uint32_t bit;
+    for (bit = 1; bit; bit <<= 1)
+        if (bit == x) return 1;
+    return 0;
+}
+
 /* Mask an address according to format */
 static uint32_t vueMaskAddress(uint32_t address, uint8_t format) {
-    return address & ((uint32_t) -1 << ((format & 0x7F) >> 3));
+    return address & ((uint32_t) -1 << (((format & 0x7F) >> 3) - 1));
 }
 
 /* Convert a signed value into an unsigned value */
@@ -137,13 +145,16 @@ int vueEmulate(VUE_CONTEXT *vb, int32_t *cycles) {
 /* Fetch and decode an instruction from state memory */
 void vueFetch(VUE_CONTEXT *vb, VUE_INSTRUCTION *inst, uint32_t address) {
 
+    /* Restrict the address to a valid value */
+    address &= (int32_t) -2;
+
     /* Fetch the instruction */
     cpuFetch16(vb, inst, address);
     if (inst->size == 4)
         cpuFetch32(vb, inst, address);
 
     /* Decode the instruction */
-    cpuDecode(vb, inst);
+    cpuDecode(vb, inst, address);
 }
 
 /* Retrieve a value from a system register */
@@ -151,9 +162,60 @@ uint32_t vueGetSystemRegister(VUE_CONTEXT *vb, int id) {
     return cpuSTSR(vb, id);
 }
 
+/* Initialize a Virtual Boy state context for use */
+int vueInitialize(VUE_CONTEXT *vb, uint8_t *rom, uint32_t rom_size,
+    uint8_t *sram, uint32_t sram_size) {
+
+    /* Error checking */
+    if (rom == NULL || rom_size < 1024 || !vueIsPowerOfTwo(rom_size))
+        return VUE_BADARG;
+    if (sram && !vueIsPowerOfTwo(sram_size))
+        return VUE_BADARG;
+
+    /* Configure cartridge */
+    vb->cartridge.rom      = rom;
+    vb->cartridge.rom_size = rom_size;
+    vb->cartridge.ram      = sram;
+    vb->cartridge.ram_size = sram_size;
+
+    return VUE_NOERROR;
+}
+
 /* Read a value from the CPU bus */
 void vueRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
     busRead(vb, access);
+}
+
+/* Perform a system reset on a Virtual Boy state context */
+void vueReset(VUE_CONTEXT *vb) {
+    uint8_t  *bytes;     /* Memory pointer to vb */
+    uint8_t  *rom;       /* Cartridge ROM */
+    uint32_t  rom_size;  /* Size in bytes of cartridge ROM */
+    uint8_t  *sram;      /* Cartridge RAM */
+    uint32_t  sram_size; /* Size in bytes of cartridge RAM */
+    uint32_t  x;         /* Iterator */
+
+    /* Preserve the contents of the cartridge configuration */
+    rom       = vb->cartridge.rom;
+    rom_size  = vb->cartridge.rom_size;
+    sram      = vb->cartridge.ram;
+    sram_size = vb->cartridge.ram_size;
+
+    /* Clear all memory to zeroes */
+    bytes = (uint8_t *) vb;
+    for (x = 0; x < sizeof (VUE_CONTEXT); x++)
+        bytes[x] = 0;
+
+    /* Restore cartridge configuration */
+    vb->cartridge.rom      = rom;
+    vb->cartridge.rom_size = rom_size;
+    vb->cartridge.ram      = sram;
+    vb->cartridge.ram_size = sram_size;
+
+    /* Initialize CPU */
+    vb->cpu.pc       = (int32_t) -1 << 4; /* 0xFFFFFFF0 */
+    vb->cpu.psw.np   = 1;
+    vb->cpu.ecr.eicc = 0xFFF0;
 }
 
 /* Set a value in a system register */
@@ -161,8 +223,11 @@ void vueRead(VUE_CONTEXT *vb, VUE_ACCESS *access) {
 uint32_t vueSetSystemRegister(VUE_CONTEXT *vb, int id, uint32_t value) {
 
     /* Special processing for ECR */
-    if (id == VUE_ECR)
-        return vb->cpu.ecr = value;
+    if (id == VUE_ECR) {
+        vb->cpu.ecr.eicc = (value >>  0) & 0xFFFF;
+        vb->cpu.ecr.fecc = (value >> 16) & 0xFFFF;
+        return value;
+    }
 
     /* Set the new value, skipping access callbacks on CHCW operations */
     cpuLDSR(vb, id, value, VUE_FALSE);

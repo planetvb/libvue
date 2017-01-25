@@ -44,8 +44,8 @@ typedef int (*INSTPROC)(VUE_CONTEXT *, VUE_INSTRUCTION *);
 /* Opcode translation descriptor */
 typedef struct {
     uint8_t format;      /* Instruction encoding format */
-    uint8_t instruction; /* libvue instruction ID */
     uint8_t sign_extend; /* Immediate operands are sign-extended */
+    uint8_t instruction; /* libvue instruction ID */
 } OPDEF;
 
 
